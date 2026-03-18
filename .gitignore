@@ -1,0 +1,26 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+build/
+dist/
+agent-harness/build/
+agent-harness/dist/
+
+# Local planning and investigation notes
+findings.md
+progress.md
+task_plan.md
+
+# Local extracted app bundles
+package.json
+main-*.js
+database-*.js
+
+# OS/editor noise
+.DS_Store
+Thumbs.db

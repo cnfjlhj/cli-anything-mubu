@@ -1,0 +1,64 @@
+{
+  "name": "cli-anything-mubu",
+  "version": "0.1.0",
+  "description": "Agent-oriented CLI bridge for the Mubu desktop app",
+  "homepage": "https://github.com/cnfjlhj/cli-anything-mubu",
+  "license": "MIT",
+  "language": "python",
+  "runtime": "python>=3.10",
+  "dependencies": ["click>=8.0"],
+  "entry_point": "cli-anything-mubu",
+  "module_entry": "cli_anything.mubu.mubu_cli:entrypoint",
+  "install": "pip install -e agent-harness/",
+  "harness_root": "agent-harness",
+  "canonical_source": "agent-harness/cli_anything/mubu",
+  "skill_file": "agent-harness/cli_anything/mubu/skills/SKILL.md",
+  "test_command": "CLI_ANYTHING_FORCE_INSTALLED=1 python3 -m pytest agent-harness/cli_anything/mubu/tests/ -q",
+  "command_groups": {
+    "discover": [
+      "docs",
+      "folders",
+      "folder-docs",
+      "path-docs",
+      "recent",
+      "daily",
+      "daily-current"
+    ],
+    "inspect": [
+      "show",
+      "search",
+      "changes",
+      "links",
+      "open-path",
+      "doc-nodes",
+      "daily-nodes"
+    ],
+    "mutate": [
+      "create-child",
+      "delete-node",
+      "update-text"
+    ],
+    "session": [
+      "status",
+      "state-path",
+      "use-doc",
+      "use-node",
+      "use-daily",
+      "clear-doc",
+      "clear-node",
+      "history"
+    ]
+  },
+  "capabilities": {
+    "read": true,
+    "search": true,
+    "navigate": true,
+    "mutate": true,
+    "repl": true,
+    "session_persistence": true
+  },
+  "safety": {
+    "mutations_default_dry_run": true,
+    "execute_flag_required": true
+  }
+}
