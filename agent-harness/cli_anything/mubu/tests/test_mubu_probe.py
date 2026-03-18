@@ -1,7 +1,10 @@
+import contextlib
+import io
 import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from mubu_probe import (
     build_api_headers,
@@ -9,6 +12,7 @@ from mubu_probe import (
     build_delete_node_request,
     build_text_update_request,
     choose_current_daily_document,
+    document_links,
     extract_doc_links,
     extract_plain_text,
     folder_documents,
@@ -16,6 +20,7 @@ from mubu_probe import (
     list_document_nodes,
     load_latest_backups,
     looks_like_daily_title,
+    main,
     node_path_to_api_path,
     normalize_document_meta_record,
     normalize_folder_record,
@@ -182,14 +187,15 @@ class PathResolutionTests(unittest.TestCase):
         ]
         self.document_metas = [
             {"doc_id": "docA", "folder_id": "dailyA", "title": "26.03.16", "updated_at": 20},
+            {"doc_id": "docA2", "folder_id": "dailyA", "title": "26.03.16", "updated_at": 25},
             {"doc_id": "docB", "folder_id": "dailyA", "title": "26.3.15", "updated_at": 10},
             {"doc_id": "docC", "folder_id": "dailyB", "title": "26.03.16", "updated_at": 30},
         ]
         self.backups = [
             {
-                "doc_id": "docA",
-                "title": "26.03.16",
-                "backup_file": "/tmp/docA.json",
+                "doc_id": "docA2",
+                "title": "today root",
+                "backup_file": "/tmp/docA2.json",
                 "modified_at": 123.0,
                 "data": {"viewType": "OUTLINE", "nodes": [{"id": "n1", "text": "<span>today</span>", "children": []}]},
             }
@@ -199,7 +205,7 @@ class PathResolutionTests(unittest.TestCase):
         docs, folder, ambiguous = folder_documents(self.document_metas, self.folders, "Workspace/Daily tasks")
         self.assertEqual(ambiguous, [])
         self.assertEqual(folder["folder_id"], "dailyA")
-        self.assertEqual([doc["doc_id"] for doc in docs], ["docA", "docB"])
+        self.assertEqual([doc["doc_id"] for doc in docs], ["docA2", "docB"])
         self.assertEqual(docs[0]["doc_path"], "Workspace/Daily tasks/26.03.16")
 
     def test_folder_documents_detects_ambiguous_folder_name(self):
@@ -211,13 +217,56 @@ class PathResolutionTests(unittest.TestCase):
     def test_resolve_document_reference_supports_full_doc_path(self):
         doc, ambiguous = resolve_document_reference(self.document_metas, self.folders, "Workspace/Daily tasks/26.03.16")
         self.assertEqual(ambiguous, [])
-        self.assertEqual(doc["doc_id"], "docA")
+        self.assertEqual(doc["doc_id"], "docA2")
         self.assertEqual(doc["doc_path"], "Workspace/Daily tasks/26.03.16")
 
     def test_resolve_document_reference_detects_ambiguous_title(self):
         doc, ambiguous = resolve_document_reference(self.document_metas, self.folders, "26.03.16")
         self.assertIsNone(doc)
         self.assertEqual(len(ambiguous), 2)
+        self.assertEqual({item["doc_id"] for item in ambiguous}, {"docA2", "docC"})
+
+    def test_resolve_document_reference_collapses_same_path_duplicates_for_title(self):
+        folders = [
+            {"folder_id": "rootA", "name": "Workspace", "parent_id": "0"},
+            {"folder_id": "dailyA", "name": "Daily tasks", "parent_id": "rootA"},
+        ]
+        metas = [
+            {"doc_id": "old", "folder_id": "dailyA", "title": "26.03.18", "updated_at": 10},
+            {"doc_id": "new", "folder_id": "dailyA", "title": "26.03.18", "updated_at": 20},
+        ]
+
+        doc, ambiguous = resolve_document_reference(metas, folders, "26.03.18")
+
+        self.assertEqual(ambiguous, [])
+        self.assertEqual(doc["doc_id"], "new")
+
+    def test_resolve_document_reference_prefers_newer_timestamp_over_higher_revision_across_doc_ids(self):
+        folders = [
+            {"folder_id": "rootA", "name": "Workspace", "parent_id": "0"},
+            {"folder_id": "dailyA", "name": "Daily tasks", "parent_id": "rootA"},
+        ]
+        metas = [
+            {
+                "doc_id": "old-high-rev",
+                "folder_id": "dailyA",
+                "title": "26.03.19",
+                "updated_at": 10,
+                "_rev": "999-older",
+            },
+            {
+                "doc_id": "new-low-rev",
+                "folder_id": "dailyA",
+                "title": "26.03.19",
+                "updated_at": 20,
+                "_rev": "1-newer",
+            },
+        ]
+
+        doc, ambiguous = resolve_document_reference(metas, folders, "Workspace/Daily tasks/26.03.19")
+
+        self.assertEqual(ambiguous, [])
+        self.assertEqual(doc["doc_id"], "new-low-rev")
 
     def test_show_document_by_reference_uses_resolved_path(self):
         payload, ambiguous = show_document_by_reference(
@@ -227,11 +276,75 @@ class PathResolutionTests(unittest.TestCase):
             "Workspace/Daily tasks/26.03.16",
         )
         self.assertEqual(ambiguous, [])
-        self.assertEqual(payload["doc_id"], "docA")
+        self.assertEqual(payload["doc_id"], "docA2")
         self.assertEqual(payload["title"], "26.03.16")
         self.assertEqual(payload["folder_path"], "Workspace/Daily tasks")
         self.assertEqual(payload["doc_path"], "Workspace/Daily tasks/26.03.16")
         self.assertEqual(payload["nodes"][0]["text"], "today")
+
+
+class DocumentMetadataOverlayTests(unittest.TestCase):
+    def test_document_links_prefers_metadata_title_for_source_document(self):
+        links = document_links(
+            [
+                {
+                    "doc_id": "docA",
+                    "title": "root node title",
+                    "data": {
+                        "nodes": [
+                            {
+                                "id": "n1",
+                                "text": (
+                                    '<a class="mention mm-iconfont" '
+                                    'href="https://mubu.com/docdoc-target-1" '
+                                    'data-token="doc-target-1">Target Doc</a>'
+                                ),
+                                "children": [],
+                            }
+                        ]
+                    },
+                }
+            ],
+            "docA",
+            title_lookup={"docA": "26.03.18", "doc-target-1": "Target Doc"},
+        )
+
+        self.assertEqual(len(links), 1)
+        self.assertEqual(links[0]["source_doc_title"], "26.03.18")
+
+    def test_show_command_prefers_metadata_title_and_path_when_available(self):
+        backups = [
+            {
+                "doc_id": "docA",
+                "title": "root node title",
+                "backup_file": "/tmp/docA.json",
+                "modified_at": 123.0,
+                "data": {
+                    "viewType": "OUTLINE",
+                    "nodes": [{"id": "n1", "text": "<span>today</span>", "children": []}],
+                },
+            }
+        ]
+        metas = [{"doc_id": "docA", "folder_id": "dailyA", "title": "26.03.18", "updated_at": 20}]
+        folders = [
+            {"folder_id": "rootA", "name": "Workspace", "parent_id": "0"},
+            {"folder_id": "dailyA", "name": "Daily tasks", "parent_id": "rootA"},
+        ]
+
+        stdout = io.StringIO()
+        with (
+            mock.patch("mubu_probe.load_latest_backups", return_value=backups),
+            mock.patch("mubu_probe.load_document_metas", return_value=metas),
+            mock.patch("mubu_probe.load_folders", return_value=folders),
+            contextlib.redirect_stdout(stdout),
+        ):
+            result = main(["show", "docA", "--json"])
+
+        self.assertEqual(result, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["title"], "26.03.18")
+        self.assertEqual(payload["folder_path"], "Workspace/Daily tasks")
+        self.assertEqual(payload["doc_path"], "Workspace/Daily tasks/26.03.18")
 
 
 class DocumentNodeListingTests(unittest.TestCase):

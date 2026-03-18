@@ -92,7 +92,14 @@ def session_state_dir() -> Path:
     override = os.environ.get("CLI_ANYTHING_MUBU_STATE_DIR", "").strip()
     if override:
         return Path(override).expanduser()
-    return Path.home() / ".config" / "cli-anything-mubu"
+    config_root = Path.home() / ".config"
+    public_dir = config_root / PUBLIC_PROGRAM_NAME
+    legacy_dir = config_root / COMPAT_PROGRAM_NAME
+    if public_dir.exists():
+        return public_dir
+    if legacy_dir.exists():
+        return legacy_dir
+    return public_dir
 
 
 def session_state_path() -> Path:

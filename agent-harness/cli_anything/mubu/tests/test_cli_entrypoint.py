@@ -7,8 +7,14 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
-from cli_anything.mubu.mubu_cli import dispatch, expand_repl_aliases_with_state, repl_help_text
+from cli_anything.mubu.mubu_cli import (
+    dispatch,
+    expand_repl_aliases_with_state,
+    repl_help_text,
+    session_state_dir,
+)
 from mubu_probe import (
     DEFAULT_BACKUP_ROOT,
     DEFAULT_STORAGE_ROOT,
@@ -120,6 +126,26 @@ class CliEntrypointTests(unittest.TestCase):
 
     def test_repl_help_text_supports_public_brand(self):
         self.assertIn("mubu-cli", repl_help_text("mubu-cli"))
+
+    def test_session_state_dir_defaults_to_public_brand_path(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            home = Path(tmpdir)
+            with (
+                mock.patch.dict(os.environ, {}, clear=False),
+                mock.patch("cli_anything.mubu.mubu_cli.Path.home", return_value=home),
+            ):
+                self.assertEqual(session_state_dir(), home / ".config" / "mubu-cli")
+
+    def test_session_state_dir_falls_back_to_legacy_path_when_only_legacy_exists(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            home = Path(tmpdir)
+            legacy = home / ".config" / "cli-anything-mubu"
+            legacy.mkdir(parents=True)
+            with (
+                mock.patch.dict(os.environ, {}, clear=False),
+                mock.patch("cli_anything.mubu.mubu_cli.Path.home", return_value=home),
+            ):
+                self.assertEqual(session_state_dir(), legacy)
 
     def test_default_entrypoint_starts_repl_and_can_exit(self):
         result = self.run_cli([], input_text="exit\n")
