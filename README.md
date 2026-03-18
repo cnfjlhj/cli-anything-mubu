@@ -1,6 +1,6 @@
-# Mubu Live Bridge Prototype
+# mubu-cli
 
-This project is a practical bridge between the user's local Mubu desktop session and an agent-oriented CLI. Its purpose is not export or migration. Its purpose is to let Codex inspect, search, navigate, and perform small atomic edits on the same Mubu workspace the user is already using.
+`mubu-cli` is the public brand for this repository: an agent-oriented Mubu CLI that works against the same local Mubu desktop session the user is already using. Its purpose is not export or migration. Its purpose is to let Codex inspect, search, navigate, and perform small atomic edits on the same live workspace.
 
 The current prototype already supports:
 
@@ -9,7 +9,8 @@ The current prototype already supports:
 - one verified live update primitive: update the `text` or `note` field of an existing node
 - one verified live create primitive: append or insert a child under an existing node
 - one verified live delete primitive: remove an existing node or subtree by `node_id`
-- an installable `cli-anything-mubu` entrypoint with default REPL behavior
+- an installable `mubu-cli` entrypoint with default REPL behavior
+- a compatibility `cli-anything-mubu` entrypoint for CLI-Anything-aligned workflows
 - a Click-based grouped command surface aligned to CLI-Anything harness conventions
 - a generated packaged `SKILL.md` driven from the canonical harness source
 
@@ -17,13 +18,14 @@ The project is intentionally conservative. Reads are broad. Writes are narrow, e
 
 ## Open Source Positioning
 
-`mubu-live-bridge` is the independent source repository for this work, and `cli-anything-mubu` is the packaged harness name.
+`mubu-live-bridge` is the source repository, and `mubu-cli` is the public product/CLI name.
 
 The correct public framing is:
 
 - this repository is your own MIT-licensed open source Mubu bridge / agent CLI project
+- `mubu-cli` is the default public-facing name for the project
 - it is designed to be CLI-Anything-compatible, not owned by CLI-Anything
-- the same harness is also being contributed upstream to CLI-Anything as a new software CLI
+- the upstream compatibility harness name remains `cli-anything-mubu`
 
 Current upstream status:
 
@@ -239,7 +241,8 @@ Global conventions:
 Packaged entrypoints:
 
 ```text
-cli-anything-mubu
+mubu-cli
+cli-anything-mubu   <- compatibility alias for upstream-aligned workflows
 python -m cli_anything.mubu
 ```
 
@@ -248,7 +251,7 @@ If no subcommand is given, the packaged CLI enters the REPL by default.
 ASCII mode view:
 
 ```text
-cli-anything-mubu
+mubu-cli
 ├── discover ...
 ├── inspect ...
 ├── mutate ...
@@ -283,6 +286,11 @@ Session state storage:
 - default: `~/.config/cli-anything-mubu/session.json`
 - override with `CLI_ANYTHING_MUBU_STATE_DIR`
 - REPL history file: `~/.config/cli-anything-mubu/history.txt`
+
+Current note:
+
+- root packaging now exposes `mubu-cli` as the public command name
+- the underlying compatibility/session wiring still shares the `cli-anything-mubu` state directory
 
 ## Recommended Codex Workflow
 
@@ -528,7 +536,7 @@ This project now has a minimal installable package surface:
 
 - `setup.py`
 - namespace package `cli_anything.mubu`
-- console script `cli-anything-mubu`
+- console scripts `mubu-cli` and `cli-anything-mubu`
 - packaged skill at `cli_anything/mubu/skills/SKILL.md`
 - canonical harness install root at `agent-harness/`
 
@@ -553,22 +561,22 @@ python3 -m venv .venv
 Verified packaged entrypoints:
 
 ```bash
-.venv/bin/cli-anything-mubu --help
-.venv/bin/cli-anything-mubu --json discover daily-current '<daily-folder-ref>'
-MUBU_DAILY_FOLDER='<daily-folder-ref>' .venv/bin/cli-anything-mubu --json discover daily-current
-.venv/bin/cli-anything-mubu session status --json
-.venv/bin/cli-anything-mubu repl --help
-printf 'exit\n' | .venv/bin/cli-anything-mubu
-.venv/bin/cli-anything-mubu
+.venv/bin/mubu-cli --help
+.venv/bin/mubu-cli --json discover daily-current '<daily-folder-ref>'
+MUBU_DAILY_FOLDER='<daily-folder-ref>' .venv/bin/mubu-cli --json discover daily-current
+.venv/bin/mubu-cli session status --json
+.venv/bin/mubu-cli repl --help
+printf 'exit\n' | .venv/bin/mubu-cli
+.venv/bin/mubu-cli
   # then inside REPL:
   # use-doc 'Workspace/Daily tasks/26.03.16'
   # use-node node-demo1
   # status
   # history 5
-.venv/bin/cli-anything-mubu
+.venv/bin/mubu-cli
   # in a later invocation, current-doc and current-node are still available
-.venv/bin/cli-anything-mubu discover daily-current '<daily-folder-ref>' --json
-MUBU_DAILY_FOLDER='<daily-folder-ref>' .venv/bin/cli-anything-mubu discover daily-current --json
+.venv/bin/mubu-cli discover daily-current '<daily-folder-ref>' --json
+MUBU_DAILY_FOLDER='<daily-folder-ref>' .venv/bin/mubu-cli discover daily-current --json
 ```
 
 ## CLI-Anything Alignment

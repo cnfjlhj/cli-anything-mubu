@@ -1,11 +1,12 @@
 # Open Source Positioning
 
-This file is the external-language guide for `mubu-live-bridge` / `cli-anything-mubu`.
+This file is the external-language guide for `mubu-live-bridge` / `mubu-cli`.
 
 ## What This Project Is
 
 - `mubu-live-bridge` is your independent open source repository.
-- `cli-anything-mubu` is the packaged harness and command name.
+- `mubu-cli` is the public product and command name for that repository.
+- `cli-anything-mubu` is the upstream compatibility harness name.
 - The project is MIT-licensed and can be presented as your own open source work.
 - The project is also intentionally aligned with CLI-Anything so the same harness can be contributed upstream.
 
@@ -37,26 +38,26 @@ If the PR is merged later, update the wording from "submitted upstream" to "merg
 
 ### One-line pitch
 
-`cli-anything-mubu` is an open source agent-native CLI bridge for the Mubu desktop app, built to inspect, search, and safely mutate live outline data from a local desktop session.
+`mubu-cli` is an open source agent-native CLI bridge for the Mubu desktop app, built to inspect, search, and safely mutate live outline data from a local desktop session.
 
 ### Two-line pitch
 
-I built `cli-anything-mubu`, an open source Mubu bridge that turns a local Mubu desktop session into an agent-usable CLI with dry-run-first live edits. The same harness is also being contributed upstream to CLI-Anything.
+I built `mubu-cli`, an open source Mubu bridge that turns a local Mubu desktop session into an agent-usable CLI with dry-run-first live edits. The same compatibility harness is also being contributed upstream to CLI-Anything.
 
 ### GitHub / portfolio blurb
 
-Built and open-sourced `cli-anything-mubu`, a Mubu desktop bridge with local discovery, live node inspection, and atomic dry-run-first mutations (`update-text`, `create-child`, `delete-node`). Also contributed the harness upstream to CLI-Anything as a new software CLI.
+Built and open-sourced `mubu-cli`, a Mubu desktop bridge with local discovery, live node inspection, and atomic dry-run-first mutations (`update-text`, `create-child`, `delete-node`). Also contributed the compatibility harness upstream to CLI-Anything as a new software CLI.
 
 ### Social post version
 
-I open-sourced `cli-anything-mubu`, a Mubu bridge for agent workflows. It can inspect local desktop data, resolve current daily notes, enumerate live nodes, and perform dry-run-first atomic edits. I also submitted the harness upstream to CLI-Anything.
+I open-sourced `mubu-cli`, a Mubu bridge for agent workflows. It can inspect local desktop data, resolve current daily notes, enumerate live nodes, and perform dry-run-first atomic edits. I also submitted the compatibility harness upstream to CLI-Anything.
 
 ## Recommended Claims
 
 These are safe and accurate:
 
 - "This is my open source Mubu CLI project."
-- "I built and maintain `cli-anything-mubu`."
+- "I built and maintain `mubu-cli`."
 - "I contributed the Mubu harness upstream to CLI-Anything."
 - "This repo is my independent implementation; CLI-Anything compatibility is part of the design."
 
@@ -73,4 +74,4 @@ Avoid these because they overstate ownership or status:
 
 If someone asks whether this is your project or a contribution, use:
 
-`Both. The independent repo and implementation are my own open source project, and I also contributed the compatible harness upstream to CLI-Anything.`
+`Both. The independent repo and implementation are my own open source project under the public name mubu-cli, and I also contributed the compatible harness upstream to CLI-Anything.`

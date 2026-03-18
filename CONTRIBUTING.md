@@ -1,4 +1,4 @@
-# Contributing to cli-anything-mubu
+# Contributing to mubu-cli
 
 ## Project Structure
 
@@ -35,7 +35,7 @@ source .venv/bin/activate
 pip install -e agent-harness/
 
 # Verify the installation
-cli-anything-mubu --help
+mubu-cli --help
 ```
 
 ## Running Tests

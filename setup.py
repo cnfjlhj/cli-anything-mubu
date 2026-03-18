@@ -3,7 +3,7 @@ from __future__ import annotations
 import sys
 
 
-PACKAGE_NAME = "cli-anything-mubu"
+PACKAGE_NAME = "mubu-cli"
 PACKAGE_VERSION = "0.1.0"
 
 
@@ -31,7 +31,7 @@ except ModuleNotFoundError as exc:
 setup(
     name=PACKAGE_NAME,
     version=PACKAGE_VERSION,
-    description="Agent-oriented CLI bridge for the Mubu desktop app",
+    description="Agent-oriented Mubu CLI with CLI-Anything-compatible harness layout",
     py_modules=["mubu_probe"],
     install_requires=["click>=8.0"],
     packages=find_namespace_packages(where="agent-harness", include=["cli_anything.*"]),
@@ -44,6 +44,7 @@ setup(
     },
     entry_points={
         "console_scripts": [
+            "mubu-cli=cli_anything.mubu.mubu_cli:entrypoint",
             "cli-anything-mubu=cli_anything.mubu.mubu_cli:entrypoint",
         ]
     },

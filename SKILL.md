@@ -1,9 +1,9 @@
 ---
-name: mubu-live-bridge
-description: Use when Codex needs to inspect, search, navigate, or perform small atomic edits inside the user's local Mubu desktop workspace through `mubu_probe.py`. Prefer this for near-real-time Daily tasks workflows, folder/path navigation, node targeting, and dry-run-first live mutations.
+name: mubu-cli
+description: Use when Codex needs to inspect, search, navigate, or perform small atomic edits inside the user's local Mubu desktop workspace through `mubu_probe.py` or the public `mubu-cli` entrypoint. Prefer this for near-real-time daily-note workflows, folder/path navigation, node targeting, and dry-run-first live mutations.
 ---
 
-# Mubu Live Bridge
+# mubu-cli
 
 Use this skill when the user wants Codex to operate Mubu more like a first-party assistant than a file exporter.
 
@@ -31,10 +31,13 @@ The CLI lives here:
 - canonical: `agent-harness/mubu_probe.py`
 - compatibility shim: `mubu_probe.py`
 
-Packaged entrypoint:
+Packaged entrypoints:
 
+- `mubu-cli`
 - `cli-anything-mubu`
 - `python -m cli_anything.mubu`
+- public brand: `mubu-cli`
+- upstream compatibility name: `cli-anything-mubu`
 - grouped Click domains:
   - `discover ...`
   - `inspect ...`
@@ -119,31 +122,31 @@ discover daily-current / inspect daily-nodes / discover path-docs
 Find the current daily note:
 
 ```bash
-python3 mubu_probe.py daily-current --json
+mubu-cli daily-current '<daily-folder-ref>' --json
 ```
 
 Inspect candidate nodes:
 
 ```bash
-python3 mubu_probe.py daily-nodes --query '日志流' --json
+mubu-cli daily-nodes '<daily-folder-ref>' --query '<anchor>' --json
 ```
 
 Dry-run a child creation:
 
 ```bash
-python3 mubu_probe.py create-child 'Workspace/Daily tasks/26.03.16' --parent-node-id node-demo1 --text 'new child' --json
+mubu-cli create-child '<doc-ref>' --parent-node-id <node-id> --text 'new child' --json
 ```
 
 Dry-run a text update:
 
 ```bash
-python3 mubu_probe.py update-text 'Workspace/Daily tasks/26.03.16' --node-id node-demo1 --text 'new text' --json
+mubu-cli update-text '<doc-ref>' --node-id <node-id> --text 'new text' --json
 ```
 
 Dry-run a node deletion:
 
 ```bash
-python3 mubu_probe.py delete-node 'Workspace/Daily tasks/26.03.16' --node-id node-demo1 --json
+mubu-cli delete-node '<doc-ref>' --node-id <node-id> --json
 ```
 
 ## Current Limits
