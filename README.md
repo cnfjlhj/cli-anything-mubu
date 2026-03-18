@@ -15,6 +15,28 @@ The current prototype already supports:
 
 The project is intentionally conservative. Reads are broad. Writes are narrow, explicit, and dry-run by default.
 
+## Open Source Positioning
+
+`mubu-live-bridge` is the independent source repository for this work, and `cli-anything-mubu` is the packaged harness name.
+
+The correct public framing is:
+
+- this repository is your own MIT-licensed open source Mubu bridge / agent CLI project
+- it is designed to be CLI-Anything-compatible, not owned by CLI-Anything
+- the same harness is also being contributed upstream to CLI-Anything as a new software CLI
+
+Current upstream status:
+
+- upstream contribution PR: `HKUDS/CLI-Anything#99`
+- PR URL: `https://github.com/HKUDS/CLI-Anything/pull/99`
+
+Operational note:
+
+- no-argument daily helpers should only be used when `MUBU_DAILY_FOLDER` is configured
+- otherwise pass an explicit daily-folder reference such as `<daily-folder-ref>`
+
+For copy-paste-ready external wording, see `OPEN_SOURCE_POSITIONING.md`.
+
 ## Source Layout
 
 The project now has one canonical CLI-Anything-aligned source root and one compatibility layer.
@@ -495,6 +517,7 @@ Override variables if needed:
 - `MUBU_BACKUP_ROOT`
 - `MUBU_LOG_ROOT`
 - `MUBU_STORAGE_ROOT`
+- `MUBU_DAILY_FOLDER`
 - `MUBU_API_HOST`
 - `MUBU_PLATFORM`
 - `MUBU_PLATFORM_VERSION`
@@ -531,7 +554,8 @@ Verified packaged entrypoints:
 
 ```bash
 .venv/bin/cli-anything-mubu --help
-.venv/bin/cli-anything-mubu --json discover daily-current
+.venv/bin/cli-anything-mubu --json discover daily-current '<daily-folder-ref>'
+MUBU_DAILY_FOLDER='<daily-folder-ref>' .venv/bin/cli-anything-mubu --json discover daily-current
 .venv/bin/cli-anything-mubu session status --json
 .venv/bin/cli-anything-mubu repl --help
 printf 'exit\n' | .venv/bin/cli-anything-mubu
@@ -543,7 +567,8 @@ printf 'exit\n' | .venv/bin/cli-anything-mubu
   # history 5
 .venv/bin/cli-anything-mubu
   # in a later invocation, current-doc and current-node are still available
-.venv/bin/cli-anything-mubu daily-current --json
+.venv/bin/cli-anything-mubu discover daily-current '<daily-folder-ref>' --json
+MUBU_DAILY_FOLDER='<daily-folder-ref>' .venv/bin/cli-anything-mubu discover daily-current --json
 ```
 
 ## CLI-Anything Alignment
@@ -598,7 +623,8 @@ If the user says "go into today's daily note and edit something", Codex should u
 
 ```text
 Step A: path-docs 'Workspace/Daily tasks'
-Step A0: or just use daily-current --json
+Step A0: or use daily-current '<daily-folder-ref>' --json
+Step A0b: or set MUBU_DAILY_FOLDER and then use daily-current --json
 Step A1: or use daily-nodes --query '<anchor text>' --json
 Step B: open-path '<resolved doc path>'
 Step C: doc-nodes '<resolved doc path>' --query '<anchor text>'
