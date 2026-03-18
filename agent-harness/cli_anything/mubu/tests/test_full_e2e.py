@@ -176,18 +176,18 @@ class MutateDryRunE2ETests(unittest.TestCase):
         )
 
     def _resolve_daily_node(self) -> tuple[str, str]:
-        """Helper: get current daily doc path and first node id."""
+        """Helper: get a stable daily document reference and first node id."""
         result = self.run_cli(["daily-nodes", "--json"])
         data = json.loads(result.stdout)
         doc = data.get("document", data)
-        doc_path = doc["doc_path"]
+        doc_ref = doc.get("doc_id") or doc["doc_path"]
         node_id = data["nodes"][0]["node_id"]
-        return doc_path, node_id
+        return doc_ref, node_id
 
     def test_update_text_dry_run(self):
-        doc_path, node_id = self._resolve_daily_node()
+        doc_ref, node_id = self._resolve_daily_node()
         result = self.run_cli([
-            "update-text", doc_path,
+            "update-text", doc_ref,
             "--node-id", node_id,
             "--text", "dry run test",
             "--json",
@@ -198,9 +198,9 @@ class MutateDryRunE2ETests(unittest.TestCase):
         self.assertFalse(data.get("executed", False))
 
     def test_create_child_dry_run(self):
-        doc_path, node_id = self._resolve_daily_node()
+        doc_ref, node_id = self._resolve_daily_node()
         result = self.run_cli([
-            "create-child", doc_path,
+            "create-child", doc_ref,
             "--parent-node-id", node_id,
             "--text", "dry run child",
             "--json",
@@ -211,9 +211,9 @@ class MutateDryRunE2ETests(unittest.TestCase):
         self.assertFalse(data.get("executed", False))
 
     def test_delete_node_dry_run(self):
-        doc_path, node_id = self._resolve_daily_node()
+        doc_ref, node_id = self._resolve_daily_node()
         result = self.run_cli([
-            "delete-node", doc_path,
+            "delete-node", doc_ref,
             "--node-id", node_id,
             "--json",
         ])

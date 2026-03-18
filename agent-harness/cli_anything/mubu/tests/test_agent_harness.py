@@ -4,9 +4,20 @@ import unittest
 from pathlib import Path
 
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
-HARNESS_ROOT = REPO_ROOT / "agent-harness"
-ROOT_SETUP = REPO_ROOT / "setup.py"
+SOFTWARE_ROOT = Path(__file__).resolve().parents[4]
+HARNESS_ROOT = SOFTWARE_ROOT / "agent-harness"
+STANDALONE_ROOT = SOFTWARE_ROOT if (SOFTWARE_ROOT / "setup.py").is_file() else None
+
+
+def _find_contribution_root() -> Path:
+    candidates = [SOFTWARE_ROOT, *SOFTWARE_ROOT.parents]
+    for candidate in candidates:
+        if (candidate / "CONTRIBUTING.md").is_file() and (candidate / "registry.json").is_file():
+            return candidate
+    raise AssertionError("unable to locate contribution root containing CONTRIBUTING.md and registry.json")
+
+
+CONTRIBUTION_ROOT = _find_contribution_root()
 
 
 class AgentHarnessPackagingTests(unittest.TestCase):
@@ -39,8 +50,8 @@ class AgentHarnessPackagingTests(unittest.TestCase):
             self.assertTrue(path.is_file(), msg=f"missing canonical harness test: {path}")
 
     def test_contribution_files_exist(self):
-        self.assertTrue((REPO_ROOT / "CONTRIBUTING.md").is_file())
-        self.assertTrue((REPO_ROOT / "registry.json").is_file())
+        self.assertTrue((CONTRIBUTION_ROOT / "CONTRIBUTING.md").is_file())
+        self.assertTrue((CONTRIBUTION_ROOT / "registry.json").is_file())
 
     def test_agent_harness_setup_reports_expected_name(self):
         result = subprocess.run(
@@ -63,14 +74,17 @@ class AgentHarnessPackagingTests(unittest.TestCase):
         self.assertEqual(result.stdout.strip(), "0.1.0")
 
     def test_root_setup_targets_canonical_harness_source(self):
-        setup_text = ROOT_SETUP.read_text()
+        if STANDALONE_ROOT is None:
+            self.skipTest("standalone root setup.py is not present in monorepo layout")
+        setup_text = (STANDALONE_ROOT / "setup.py").read_text()
         self.assertIn('find_namespace_packages(where="agent-harness"', setup_text)
         self.assertIn('package_dir={"": "agent-harness"}', setup_text)
 
     def test_setup_files_declare_click_runtime_dependency(self):
-        root_setup = ROOT_SETUP.read_text()
         harness_setup = (HARNESS_ROOT / "setup.py").read_text()
-        self.assertIn('"click>=8.0"', root_setup)
+        if STANDALONE_ROOT is not None:
+            root_setup = (STANDALONE_ROOT / "setup.py").read_text()
+            self.assertIn('"click>=8.0"', root_setup)
         self.assertIn('"click>=8.0"', harness_setup)
 
     def test_skill_generator_assets_exist(self):
