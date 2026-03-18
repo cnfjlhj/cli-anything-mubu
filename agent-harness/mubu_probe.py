@@ -83,8 +83,15 @@ ANCHOR_RE = re.compile(r"<a\b(?P<attrs>[^>]*)>(?P<label>.*?)</a>", re.IGNORECASE
 TOKEN_ATTR_RE = re.compile(r'data-token="(?P<token>[^"]+)"')
 HREF_DOC_RE = re.compile(r'href="https://mubu\.com/doc(?P<token>[^"?#/]+)"', re.IGNORECASE)
 NODE_ID_ALPHABET = string.ascii_letters + string.digits
-DAILY_TITLE_RE = re.compile(r"^\d{2}\.\d{1,2}\.\d{1,2}(?:-\d{1,2}(?:\.\d{1,2})?)?")
+DAILY_TITLE_PATTERNS = (
+    re.compile(r"^\d{2}\.\d{1,2}\.\d{1,2}(?:-\d{1,2}(?:\.\d{1,2})?)?$"),
+    re.compile(r"^\d{4}[./-]\d{1,2}[./-]\d{1,2}$"),
+    re.compile(r"^\d{4}年\d{1,2}月\d{1,2}日$"),
+    re.compile(r"^\d{1,2}[./-]\d{1,2}$"),
+    re.compile(r"^\d{1,2}月\d{1,2}日$"),
+)
 DEFAULT_DAILY_EXCLUDE_KEYWORDS = ("模板", "template")
+DEFAULT_DAILY_FOLDER_KEYWORDS = ("daily", "diary", "journal", "日记", "日志", "每日", "每天", "日常")
 
 
 def configured_daily_folder_ref(env: Mapping[str, str] | None = None) -> str | None:
@@ -665,10 +672,20 @@ def looks_like_daily_title(
     title = title.strip()
     if not title:
         return False
-    if not DAILY_TITLE_RE.match(title):
+    if not any(pattern.match(title) for pattern in DAILY_TITLE_PATTERNS):
         return False
     lowered = title.casefold()
     return not any(keyword.casefold() in lowered for keyword in exclude_keywords)
+
+
+def looks_like_daily_folder_name(
+    name: str | None,
+    keywords: Iterable[str] = DEFAULT_DAILY_FOLDER_KEYWORDS,
+) -> bool:
+    normalized_name = normalized_lookup_key(name)
+    if not normalized_name:
+        return False
+    return any(keyword.casefold() in normalized_name for keyword in keywords)
 
 
 def choose_current_daily_document(
@@ -1485,7 +1502,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     daily_parser = subparsers.add_parser("daily", help="Find Daily-style folders and list the documents inside them.")
     daily_parser.add_argument("--storage-root", type=Path, default=DEFAULT_STORAGE_ROOT)
-    daily_parser.add_argument("--query", default="daily")
+    daily_parser.add_argument(
+        "--query",
+        default=None,
+        help="Optional folder-name substring filter. Defaults to built-in daily-folder heuristics.",
+    )
     daily_parser.add_argument("--limit", type=int, default=50)
     daily_parser.add_argument("--json", action="store_true")
 
@@ -1692,11 +1713,25 @@ def main(argv: list[str] | None = None) -> int:
         folders = load_folders(args.storage_root)
         metas = load_document_metas(args.storage_root)
         _, folder_paths = build_folder_indexes(folders)
-        matched_folders = [
-            folder
-            for folder in folders
-            if args.query.lower() in (folder.get("name") or "").lower()
-        ]
+        docs_by_folder: dict[str, list[dict[str, Any]]] = {}
+        for meta in metas:
+            folder_id = meta.get("folder_id")
+            if isinstance(folder_id, str):
+                docs_by_folder.setdefault(folder_id, []).append(meta)
+        if args.query:
+            query = normalized_lookup_key(args.query)
+            matched_folders = [
+                folder
+                for folder in folders
+                if query in normalized_lookup_key(folder.get("name"))
+            ]
+        else:
+            matched_folders = [
+                folder
+                for folder in folders
+                if looks_like_daily_folder_name(folder.get("name"))
+                or choose_current_daily_document(docs_by_folder.get(folder.get("folder_id"), []))[0] is not None
+            ]
         matched_ids = {folder["folder_id"] for folder in matched_folders}
         docs = [
             {

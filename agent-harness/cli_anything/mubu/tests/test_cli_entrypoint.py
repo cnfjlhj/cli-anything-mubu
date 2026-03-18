@@ -1,3 +1,5 @@
+import contextlib
+import io
 import os
 import shutil
 import subprocess
@@ -6,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from cli_anything.mubu.mubu_cli import expand_repl_aliases_with_state
+from cli_anything.mubu.mubu_cli import dispatch, expand_repl_aliases_with_state, repl_help_text
 from mubu_probe import (
     DEFAULT_BACKUP_ROOT,
     DEFAULT_STORAGE_ROOT,
@@ -96,11 +98,28 @@ class CliEntrypointTests(unittest.TestCase):
         self.assertIn("create-child", result.stdout)
         self.assertIn("delete-node", result.stdout)
 
+    def test_dispatch_uses_public_prog_name_when_requested(self):
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            result = dispatch(["--help"], prog_name="mubu-cli")
+        self.assertEqual(result, 0)
+        self.assertIn("Usage: mubu-cli", stdout.getvalue())
+
+    def test_dispatch_uses_compat_prog_name_when_requested(self):
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            result = dispatch(["--help"], prog_name="cli-anything-mubu")
+        self.assertEqual(result, 0)
+        self.assertIn("Usage: cli-anything-mubu", stdout.getvalue())
+
     def test_repl_help_renders(self):
         result = self.run_cli(["repl", "--help"])
         self.assertEqual(result.returncode, 0, msg=result.stderr)
         self.assertIn("Interactive REPL", result.stdout)
         self.assertIn("use-node", result.stdout)
+
+    def test_repl_help_text_supports_public_brand(self):
+        self.assertIn("mubu-cli", repl_help_text("mubu-cli"))
 
     def test_default_entrypoint_starts_repl_and_can_exit(self):
         result = self.run_cli([], input_text="exit\n")

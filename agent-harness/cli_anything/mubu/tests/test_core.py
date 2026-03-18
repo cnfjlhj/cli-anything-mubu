@@ -20,6 +20,7 @@ from mubu_probe import (
     generate_node_id,
     infer_title,
     iter_nodes,
+    looks_like_daily_folder_name,
     looks_like_daily_title,
     maybe_plain_text_to_html,
     node_path_to_api_path,
@@ -187,12 +188,33 @@ class DailyTitleTests(unittest.TestCase):
         self.assertTrue(looks_like_daily_title("26.03.16"))
         self.assertTrue(looks_like_daily_title("26.3.8-3.9"))
 
+    def test_accepts_common_alternative_date_formats(self):
+        self.assertTrue(looks_like_daily_title("2026-03-18"))
+        self.assertTrue(looks_like_daily_title("2026/3/18"))
+        self.assertTrue(looks_like_daily_title("2026年3月18日"))
+        self.assertTrue(looks_like_daily_title("3.18"))
+        self.assertTrue(looks_like_daily_title("3/18"))
+
     def test_rejects_non_date_titles(self):
         self.assertFalse(looks_like_daily_title("DDL表"))
         self.assertFalse(looks_like_daily_title("模板更新"))
 
     def test_rejects_template_suffix(self):
         self.assertFalse(looks_like_daily_title("26.2.22模板更新"))
+
+
+class DailyFolderTests(unittest.TestCase):
+    def test_matches_common_daily_folder_names(self):
+        self.assertTrue(looks_like_daily_folder_name("Daily tasks"))
+        self.assertTrue(looks_like_daily_folder_name("Journal"))
+        self.assertTrue(looks_like_daily_folder_name("日记"))
+        self.assertTrue(looks_like_daily_folder_name("每日记录"))
+        self.assertTrue(looks_like_daily_folder_name("每天记录"))
+
+    def test_rejects_unrelated_folder_names(self):
+        self.assertFalse(looks_like_daily_folder_name("科研项目"))
+        self.assertFalse(looks_like_daily_folder_name("Archive"))
+        self.assertFalse(looks_like_daily_folder_name("复盘计划"))
 
 
 class NormalizationHelperTests(unittest.TestCase):

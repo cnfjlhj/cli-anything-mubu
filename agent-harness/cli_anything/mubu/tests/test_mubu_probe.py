@@ -299,6 +299,8 @@ class DailySelectionTests(unittest.TestCase):
     def test_looks_like_daily_title_accepts_date_titles_and_rejects_templates(self):
         self.assertTrue(looks_like_daily_title("26.03.16"))
         self.assertTrue(looks_like_daily_title("26.3.8-3.9"))
+        self.assertTrue(looks_like_daily_title("2026-03-18"))
+        self.assertTrue(looks_like_daily_title("2026年3月18日"))
         self.assertFalse(looks_like_daily_title("DDL表"))
         self.assertFalse(looks_like_daily_title("26.2.22模板更新"))
 
@@ -313,6 +315,17 @@ class DailySelectionTests(unittest.TestCase):
         selected, candidates = choose_current_daily_document(docs)
         self.assertEqual(selected["doc_id"], "today")
         self.assertEqual([item["doc_id"] for item in candidates], ["today", "yesterday"])
+
+    def test_choose_current_daily_document_accepts_full_year_and_cn_date_titles(self):
+        docs = [
+            {"doc_id": "older", "title": "2026年3月17日", "updated_at": 90},
+            {"doc_id": "latest", "title": "2026-03-18", "updated_at": 120},
+            {"doc_id": "other", "title": "项目看板", "updated_at": 130},
+        ]
+
+        selected, candidates = choose_current_daily_document(docs)
+        self.assertEqual(selected["doc_id"], "latest")
+        self.assertEqual([item["doc_id"] for item in candidates], ["latest", "older"])
 
     def test_choose_current_daily_document_can_fallback_to_any_title(self):
         docs = [
