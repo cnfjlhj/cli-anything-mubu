@@ -75,7 +75,9 @@ class AgentHarnessPackagingTests(unittest.TestCase):
 
     def test_root_setup_targets_canonical_harness_source(self):
         if STANDALONE_ROOT is None:
-            self.skipTest("standalone root setup.py is not present in monorepo layout")
+            self.assertFalse((SOFTWARE_ROOT / "setup.py").exists())
+            self.assertTrue((SOFTWARE_ROOT / "agent-harness" / "setup.py").is_file())
+            return
         setup_text = (STANDALONE_ROOT / "setup.py").read_text()
         self.assertIn('find_namespace_packages(where="agent-harness"', setup_text)
         self.assertIn('package_dir={"": "agent-harness"}', setup_text)
