@@ -92,9 +92,14 @@ def extract_system_package(content: str) -> Optional[str]:
 
 def extract_version_from_setup(setup_path: Path) -> str:
     content = setup_path.read_text(encoding="utf-8")
-    match = re.search(r'version\s*=\s*["\']([^"\']+)["\']', content)
-    if match:
-        return match.group(1)
+    direct_match = re.search(r'version\s*=\s*["\']([^"\']+)["\']', content)
+    if direct_match:
+        return direct_match.group(1)
+
+    constant_match = re.search(r'PACKAGE_VERSION\s*=\s*["\']([^"\']+)["\']', content)
+    if constant_match:
+        return constant_match.group(1)
+
     return "1.0.0"
 
 
@@ -185,8 +190,8 @@ def generate_examples(software_name: str, command_groups: list[CommandGroup]) ->
         examples.append(
             Example(
                 title="Discover Current Daily Note",
-                description="Resolve the current daily note and emit JSON output for an agent.",
-                code=f"""cli-anything-{software_name} --json discover daily-current""",
+                description="Resolve the current daily note from an explicit folder reference.",
+                code=f"""cli-anything-{software_name} --json discover daily-current '<daily-folder-ref>'""",
             )
         )
     if "mutate" in group_names:
@@ -196,7 +201,7 @@ def generate_examples(software_name: str, command_groups: list[CommandGroup]) ->
                 description="Inspect the exact outgoing payload before a live mutation.",
                 code=(
                     f"cli-anything-{software_name} mutate update-text "
-                    "'Workspace/Daily tasks/26.03.16' --node-id node-demo1 --text 'new text' --json"
+                    "'<doc-ref>' --node-id <node-id> --text 'new text' --json"
                 ),
             )
         )
@@ -269,6 +274,7 @@ def generate_skill_md_simple(metadata: SkillMetadata) -> str:
         "- Python 3.10+",
         "- An active Mubu desktop session on this machine",
         "- Local Mubu profile data available to the CLI",
+        "- Set `MUBU_DAILY_FOLDER` if you want no-argument daily helpers",
         "",
         "## Entry Points",
         "",
@@ -296,9 +302,9 @@ def generate_skill_md_simple(metadata: SkillMetadata) -> str:
             "## Recommended Agent Workflow",
             "",
             "```text",
-            "discover daily-current --json",
+            "discover daily-current '<daily-folder-ref>' --json",
             "        ->",
-            "inspect daily-nodes --query '<anchor>' --json",
+            "inspect daily-nodes '<daily-folder-ref>' --query '<anchor>' --json",
             "        ->",
             "session use-doc '<doc_path>'",
             "        ->",
@@ -316,6 +322,7 @@ def generate_skill_md_simple(metadata: SkillMetadata) -> str:
             "5. Prefer `--node-id` and `--parent-node-id` over text matching.",
             "6. `delete-node` removes the full targeted subtree.",
             "7. Even same-text updates can still advance document version history.",
+            "8. Pass a daily-folder reference explicitly or set `MUBU_DAILY_FOLDER` before using no-arg daily helpers.",
             "",
             "## Examples",
             "",

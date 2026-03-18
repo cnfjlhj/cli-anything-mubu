@@ -7,13 +7,59 @@ import unittest
 from pathlib import Path
 
 from cli_anything.mubu.mubu_cli import expand_repl_aliases_with_state
-from mubu_probe import DEFAULT_BACKUP_ROOT, DEFAULT_STORAGE_ROOT
+from mubu_probe import (
+    DEFAULT_BACKUP_ROOT,
+    DEFAULT_STORAGE_ROOT,
+    build_folder_indexes,
+    choose_current_daily_document,
+    load_document_metas,
+    load_folders,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
-SAMPLE_DOC_REF = "workspace/Daily tasks/2026.03.18"
-SAMPLE_NODE_ID = "node-demo1"
+SAMPLE_DOC_REF = "workspace/reference docs/sample-doc"
+SAMPLE_NODE_ID = "node-sample-1"
 HAS_LOCAL_DATA = DEFAULT_BACKUP_ROOT.is_dir() and DEFAULT_STORAGE_ROOT.is_dir()
+
+
+def detect_daily_folder_ref() -> str | None:
+    if not HAS_LOCAL_DATA:
+        return None
+
+    metas = load_document_metas(DEFAULT_STORAGE_ROOT)
+    folders = load_folders(DEFAULT_STORAGE_ROOT)
+    _, folder_paths = build_folder_indexes(folders)
+    docs_by_folder: dict[str, list[dict[str, object]]] = {}
+    for meta in metas:
+        folder_id = meta.get("folder_id")
+        if isinstance(folder_id, str):
+            docs_by_folder.setdefault(folder_id, []).append(meta)
+
+    best_path: str | None = None
+    best_score = -1
+    for folder in folders:
+        folder_id = folder.get("folder_id")
+        if not isinstance(folder_id, str):
+            continue
+        _, candidates = choose_current_daily_document(docs_by_folder.get(folder_id, []))
+        if not candidates:
+            continue
+        folder_path = folder_paths.get(folder_id, "")
+        if not folder_path:
+            continue
+        score = max(
+            max(item.get("updated_at") or 0, item.get("created_at") or 0)
+            for item in candidates
+        )
+        if score > best_score:
+            best_score = score
+            best_path = folder_path
+    return best_path
+
+
+DETECTED_DAILY_FOLDER_REF = detect_daily_folder_ref()
+HAS_DAILY_FOLDER = HAS_LOCAL_DATA and DETECTED_DAILY_FOLDER_REF is not None
 
 
 def resolve_cli() -> list[str]:
@@ -191,9 +237,16 @@ class CliEntrypointTests(unittest.TestCase):
             self.assertEqual(final.returncode, 0, msg=final.stderr)
             self.assertIn("Current node: <unset>", final.stdout)
 
-    @unittest.skipUnless(HAS_LOCAL_DATA, "Mubu local data directories not found")
+    @unittest.skipUnless(HAS_DAILY_FOLDER, "Mubu local data or daily folder not found")
     def test_grouped_discover_daily_current_supports_global_json_flag(self):
-        result = self.run_cli(["--json", "discover", "daily-current"])
+        missing = self.run_cli(["--json", "discover", "daily-current"])
+        self.assertNotEqual(missing.returncode, 0)
+        self.assertIn("MUBU_DAILY_FOLDER", missing.stderr)
+
+        result = self.run_cli(
+            ["--json", "discover", "daily-current"],
+            extra_env={"MUBU_DAILY_FOLDER": DETECTED_DAILY_FOLDER_REF},
+        )
         self.assertEqual(result.returncode, 0, msg=result.stderr)
         self.assertIn('"doc_path"', result.stdout)
 

@@ -5,17 +5,20 @@ This file follows the CLI-Anything habit of keeping the test plan and the execut
 ## Test Inventory Plan
 
 - `test_mubu_probe.py`: 26 unit / light integration tests planned
+- `test_core.py`: 35 pure-logic contract tests planned
 - `test_cli_entrypoint.py`: 13 subprocess / entrypoint tests planned
-- `test_agent_harness.py`: 9 packaging / harness-layout tests planned
-- `test_live_api.py`: 6 opt-in live-session tests planned for a later phase
+- `test_full_e2e.py`: 11 local-data end-to-end tests planned
+- `test_agent_harness.py`: 11 packaging / harness-layout tests planned
 
 Current status:
 
 - `test_mubu_probe.py` exists and passes
+- `test_core.py` exists and passes
 - `test_cli_entrypoint.py` exists and passes
+- `test_full_e2e.py` exists and passes when local Mubu data is available
 - `test_agent_harness.py` exists and passes
 - canonical harness test modules now also exist under `agent-harness/cli_anything/mubu/tests/`
-- `test_live_api.py` is not implemented yet because live mutation tests need explicit opt-in controls
+- no separate `test_live_api.py` exists yet; local-data live coverage currently lives in `test_full_e2e.py` with skip guards and dry-run-first mutation checks
 
 ## Unit Test Plan
 
@@ -103,6 +106,41 @@ Expected subprocess count:
 
 - 13 tests
 
+### Module: `test_core.py`
+
+Behaviors covered now:
+
+- pure helper and transformation contracts
+- plain-text and rich-text HTML conversion
+- node id generation
+- node iteration and path conversion
+- folder index construction
+- daily-title classification
+- normalization helpers and revision parsing
+- timestamp parsing and formatting
+- default local-path discovery
+- ambiguity message formatting
+- document metadata enrichment and record deduplication
+
+Expected pure-logic count:
+
+- 35 tests
+
+### Module: `test_full_e2e.py`
+
+Behaviors covered now:
+
+- live local-data discovery commands
+- current-daily resolution with `MUBU_DAILY_FOLDER`
+- live node listing from the current daily note
+- `session use-daily` persisted state
+- REPL `use-daily` plus follow-on inspection
+- dry-run `update-text`, `create-child`, and `delete-node`
+
+Expected local-data E2E count:
+
+- 11 tests
+
 ### Module: `test_agent_harness.py`
 
 Behaviors covered now:
@@ -119,7 +157,7 @@ Behaviors covered now:
 
 Expected packaging count:
 
-- 9 tests
+- 11 tests
 
 ## E2E Test Plan
 
@@ -128,7 +166,7 @@ These workflows are currently verified manually against the real local Mubu sess
 Planned live scenarios:
 
 1. read recent documents from the local desktop profile
-2. resolve `Workspace/Daily tasks` and identify the current daily note
+2. resolve `<daily-folder-ref>` and identify the current daily note
 3. enumerate live nodes inside the current daily note
 4. dry-run a text update and inspect the exact outgoing payload
 5. execute one same-text live update to validate auth/member/version wiring
@@ -157,10 +195,10 @@ What should be verified in later automated live tests:
 
 ### Workflow 1: Daily Note Discovery
 
-- Simulates: Codex entering the same daily workspace the user is using
+- Simulates: an agent entering a configured daily-note workspace
 - Operations chained:
   - `recent`
-  - `path-docs 'Workspace/Daily tasks'`
+  - `path-docs '<daily-folder-ref>'`
 - Verified:
   - folder path resolution
   - correct daily-note document ids
@@ -170,8 +208,8 @@ What should be verified in later automated live tests:
 
 - Simulates: Codex locating the exact node to edit before sending any write
 - Operations chained:
-  - `open-path 'Workspace/Daily tasks/26.03.16'`
-  - `doc-nodes 'Workspace/Daily tasks/26.03.16' --query '日志流'`
+  - `open-path '<doc-ref>'`
+  - `doc-nodes '<doc-ref>' --query '<anchor>'`
 - Verified:
   - live document lookup
   - correct node id
@@ -181,7 +219,8 @@ What should be verified in later automated live tests:
 
 - Simulates: Codex jumping directly to the user's current daily note
 - Operations chained:
-  - `daily-current --json`
+  - `daily-current '<daily-folder-ref>' --json`
+  - `daily-current --json` with `MUBU_DAILY_FOLDER='<daily-folder-ref>'`
 - Verified:
   - date-like title filtering
   - template exclusion
@@ -191,7 +230,8 @@ What should be verified in later automated live tests:
 
 - Simulates: Codex looking for an anchor inside today's daily note without manually resolving the path first
 - Operations chained:
-  - `daily-nodes --query '...'`
+  - `daily-nodes '<daily-folder-ref>' --query '<anchor>'`
+  - `daily-nodes --query '<anchor>'` with `MUBU_DAILY_FOLDER='<daily-folder-ref>'`
 - Verified:
   - current daily-note resolution
   - live document fetch
@@ -244,17 +284,13 @@ What should be verified in later automated live tests:
 Command:
 
 ```bash
-python3 -m unittest tests/test_mubu_probe.py tests/test_cli_entrypoint.py tests/test_agent_harness.py
+CLI_ANYTHING_FORCE_INSTALLED=1 python3 -m pytest cli_anything/mubu/tests -q
 ```
 
 Latest result:
 
 ```text
-................................................
-----------------------------------------------------------------------
-Ran 48 tests in 16.880s
-
-OK
+96 passed
 ```
 
 ### Syntax Verification
@@ -284,6 +320,7 @@ Commands:
 .venv/bin/python -m pip install -e ./agent-harness
 .venv/bin/python -m pip install -e .
 .venv/bin/cli-anything-mubu --help
+.venv/bin/cli-anything-mubu --json discover daily-current '<daily-folder-ref>'
 .venv/bin/cli-anything-mubu --json discover daily-current
 .venv/bin/cli-anything-mubu session status --json
 tmpdir=$(mktemp -d)
@@ -294,7 +331,8 @@ Latest result:
 
 - both editable-install paths succeeded when run sequentially
 - installed `--help` exposes grouped `discover` / `inspect` / `mutate` / `session` domains
-- installed `discover daily-current` resolved the real daily note `Workspace/Daily tasks/26.03.16`
+- installed `discover daily-current '<daily-folder-ref>'` resolved the current daily note
+- installed `discover daily-current` also works when `MUBU_DAILY_FOLDER` is configured
 - installed `session status --json` returned persisted state successfully
 - installed no-arg REPL started cleanly, displayed the packaged canonical skill path, and exited cleanly
 
@@ -335,13 +373,15 @@ Latest result:
 Commands:
 
 ```bash
-.venv/bin/cli-anything-mubu daily-current --json
+.venv/bin/cli-anything-mubu discover daily-current '<daily-folder-ref>' --json
+.venv/bin/cli-anything-mubu discover daily-current --json
 printf 'exit\n' | env CLI_ANYTHING_MUBU_STATE_DIR="$(mktemp -d)" .venv/bin/cli-anything-mubu
 ```
 
 Latest result:
 
-- installed `daily-current --json` passed against the real local Mubu session
+- installed `discover daily-current '<daily-folder-ref>' --json` passed against the real local Mubu session
+- installed no-arg `discover daily-current --json` passed when `MUBU_DAILY_FOLDER` was configured
 - installed REPL banner pointed to `agent-harness/cli_anything/mubu/skills/SKILL.md`
 
 ### Wheel Packaging Verification
@@ -387,7 +427,8 @@ python3 -m venv .venv
 .venv/bin/cli-anything-mubu --help
 .venv/bin/cli-anything-mubu repl --help
 tmpdir=$(mktemp -d) && env CLI_ANYTHING_MUBU_STATE_DIR="$tmpdir" /usr/bin/zsh -lc "printf 'exit\n' | .venv/bin/cli-anything-mubu"
-.venv/bin/cli-anything-mubu daily-current --json
+.venv/bin/cli-anything-mubu discover daily-current '<daily-folder-ref>' --json
+.venv/bin/cli-anything-mubu discover daily-current --json
 .venv/bin/python -m pip install -e ./agent-harness
 python3 agent-harness/setup.py --name
 python3 agent-harness/setup.py --version
@@ -404,7 +445,8 @@ Latest result:
 - REPL can store and report the current node reference during a session
 - REPL can persist `current-node` across independent processes when given the same state directory
 - REPL can expand both `@doc` and `@node` into a real dry-run command
-- installed console script can resolve the current daily note
+- installed console script can resolve the current daily note from an explicit folder reference
+- installed console script also supports no-arg daily resolution when `MUBU_DAILY_FOLDER` is set
 - `agent-harness/` now works as a real editable-install root
 - harness setup metadata reports the correct package identity
 
@@ -413,14 +455,16 @@ Latest result:
 Commands executed on the real machine:
 
 ```bash
-python3 mubu_probe.py path-docs 'Workspace/Daily tasks' --limit 5 --json
-python3 mubu_probe.py daily-current --json
-python3 mubu_probe.py daily-nodes --query '日志流' --json
-python3 mubu_probe.py doc-nodes 'Workspace/Daily tasks/26.03.16' --query '日志流' --json
-python3 mubu_probe.py create-child 'Workspace/Daily tasks/26.03.16' --parent-node-id node-demo1 --text 'CLI bridge dry run child' --note 'not executed' --json
-python3 mubu_probe.py delete-node 'Workspace/Daily tasks/26.03.16' --node-id node-demo1 --json
-python3 mubu_probe.py update-text 'Workspace/Daily tasks/26.03.16' --node-id node-demo1 --text '日志流' --json
-python3 mubu_probe.py update-text 'Workspace/Daily tasks/26.03.16' --match-text '日志流' --text '日志流' --execute --json
+python3 mubu_probe.py path-docs '<daily-folder-ref>' --limit 5 --json
+python3 mubu_probe.py daily-current '<daily-folder-ref>' --json
+MUBU_DAILY_FOLDER='<daily-folder-ref>' python3 mubu_probe.py daily-current --json
+python3 mubu_probe.py daily-nodes '<daily-folder-ref>' --query '<anchor>' --json
+MUBU_DAILY_FOLDER='<daily-folder-ref>' python3 mubu_probe.py daily-nodes --query '<anchor>' --json
+python3 mubu_probe.py doc-nodes '<doc-ref>' --query '<anchor>' --json
+python3 mubu_probe.py create-child '<doc-ref>' --parent-node-id <node-id> --text 'CLI bridge dry run child' --note 'not executed' --json
+python3 mubu_probe.py delete-node '<doc-ref>' --node-id <node-id> --json
+python3 mubu_probe.py update-text '<doc-ref>' --node-id <node-id> --text '<replacement-text>' --json
+python3 mubu_probe.py update-text '<doc-ref>' --match-text '<anchor>' --text '<replacement-text>' --execute --json
 python3 - <<'PY'
 # create-child --execute scratch node, then delete-node --execute that exact node id
 PY
@@ -428,23 +472,22 @@ PY
 
 Observed results:
 
-- `path-docs` resolved folder id `folder-daily-01`
-- current daily doc resolved to `doc-demo-01`
-- `daily-current` resolved the same current daily path `Workspace/Daily tasks/26.03.16` in one step
-- `daily-nodes` resolved the same current daily note and returned live node `node-demo1`
-- `doc-nodes` resolved node id `node-demo1`, path `["nodes", 3, 0]`, and api path `["nodes", 3, "children", 0]`
-- `create-child` dry-run resolved parent `node-demo1`, child insert index `4`, and child path `["nodes", 3, "children", 0, "children", 4]`
-- `delete-node` dry-run resolved parent `qv9klzkq2L`, delete index `0`, and api path `["nodes", 3, "children", 0]`
+- `path-docs` resolved the configured daily folder successfully
+- `daily-current` resolved the same current daily note with both the explicit folder argument and `MUBU_DAILY_FOLDER`
+- `daily-nodes` resolved the same current daily note and returned the targeted live node
+- `doc-nodes` returned a stable node id plus both simplified and API paths for the target node
+- `create-child` dry-run resolved the parent node, child insert index, and canonical child path
+- `delete-node` dry-run resolved the parent id, delete index, and canonical API path
 - dry-run update produced the expected `CHANGE` payload
 - real execute returned success
-- live document version advanced from `256` to `257`
-- post-fetch verification confirmed the node text still read `日志流`
-- reversible scratch create/delete advanced live version from `261` to `262` to `263`
-- scratch node `hUVCZEUf3R` was present after create and absent after delete
+- live document version advanced after execution
+- post-fetch verification confirmed the target node text matched the requested value
+- reversible scratch create/delete advanced live version on each execute call
+- the scratch node was present after create and absent after delete
 
 ## Summary Statistics
 
-- automated tests: 40 / 40 pass
+- automated tests: 96 / 96 pass
 - syntax check: pass
 - help/CLI surface checks: pass
 - isolated install / entrypoint checks: pass

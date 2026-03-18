@@ -9,6 +9,12 @@ This package lives in the CLI-Anything-aligned harness tree and exposes:
 - default REPL when no subcommand is supplied
 - REPL banner with app version, packaged skill path, and history path
 - persisted `current-doc` and `current-node` REPL context
+- grouped `discover` / `inspect` / `mutate` / `session` commands
+
+Daily helpers are now explicit by default:
+
+- pass a daily-folder reference to `discover daily-current`, `inspect daily-nodes`, or `session use-daily`
+- or set `MUBU_DAILY_FOLDER` if you want those helpers to work without an argument
 
 Canonical source paths:
 

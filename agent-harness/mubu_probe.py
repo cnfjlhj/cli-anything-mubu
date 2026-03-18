@@ -87,6 +87,31 @@ DAILY_TITLE_RE = re.compile(r"^\d{2}\.\d{1,2}\.\d{1,2}(?:-\d{1,2}(?:\.\d{1,2})?)
 DEFAULT_DAILY_EXCLUDE_KEYWORDS = ("模板", "template")
 
 
+def configured_daily_folder_ref(env: Mapping[str, str] | None = None) -> str | None:
+    env = env or os.environ
+    value = env.get("MUBU_DAILY_FOLDER", "")
+    if not isinstance(value, str):
+        return None
+    resolved = value.strip()
+    return resolved or None
+
+
+def resolve_daily_folder_ref(
+    folder_ref: str | None,
+    env: Mapping[str, str] | None = None,
+) -> str:
+    value = (folder_ref or "").strip()
+    if value:
+        return value
+    configured = configured_daily_folder_ref(env=env)
+    if configured:
+        return configured
+    raise RuntimeError(
+        "daily folder reference required; pass <folder_ref> explicitly "
+        "or set MUBU_DAILY_FOLDER"
+    )
+
+
 def extract_plain_text(value: Any) -> str:
     if value is None:
         return ""
@@ -1468,7 +1493,7 @@ def build_parser() -> argparse.ArgumentParser:
         "daily-current",
         help="Resolve the current daily document from one Daily-style folder.",
     )
-    daily_current_parser.add_argument("folder_ref", nargs="?", default="Daily tasks")
+    daily_current_parser.add_argument("folder_ref", nargs="?")
     daily_current_parser.add_argument("--storage-root", type=Path, default=DEFAULT_STORAGE_ROOT)
     daily_current_parser.add_argument("--limit", type=int, default=5)
     daily_current_parser.add_argument(
@@ -1482,7 +1507,7 @@ def build_parser() -> argparse.ArgumentParser:
         "daily-nodes",
         help="List live nodes from the current daily document in one step.",
     )
-    daily_nodes_parser.add_argument("folder_ref", nargs="?", default="Daily tasks")
+    daily_nodes_parser.add_argument("folder_ref", nargs="?")
     daily_nodes_parser.add_argument("--storage-root", type=Path, default=DEFAULT_STORAGE_ROOT)
     daily_nodes_parser.add_argument("--api-host", default=DEFAULT_API_HOST)
     daily_nodes_parser.add_argument("--query", default=None, help="Filter nodes by plain-text substring.")
@@ -1695,11 +1720,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "daily-current":
         metas = load_document_metas(args.storage_root)
         folders = load_folders(args.storage_root)
-        docs, folder, ambiguous = folder_documents(metas, folders, args.folder_ref)
+        try:
+            folder_ref = resolve_daily_folder_ref(args.folder_ref)
+        except RuntimeError as exc:
+            parser.error(str(exc))
+        docs, folder, ambiguous = folder_documents(metas, folders, folder_ref)
         if folder is None:
             if ambiguous:
-                parser.error(ambiguous_error_message("folder", args.folder_ref, ambiguous, "path"))
-            parser.error(f"folder not found: {args.folder_ref}")
+                parser.error(ambiguous_error_message("folder", folder_ref, ambiguous, "path"))
+            parser.error(f"folder not found: {folder_ref}")
 
         selected, candidates = choose_current_daily_document(
             docs,
@@ -1733,11 +1762,15 @@ def main(argv: list[str] | None = None) -> int:
 
         metas = load_document_metas(args.storage_root)
         folders = load_folders(args.storage_root)
-        docs, folder, ambiguous = folder_documents(metas, folders, args.folder_ref)
+        try:
+            folder_ref = resolve_daily_folder_ref(args.folder_ref)
+        except RuntimeError as exc:
+            parser.error(str(exc))
+        docs, folder, ambiguous = folder_documents(metas, folders, folder_ref)
         if folder is None:
             if ambiguous:
-                parser.error(ambiguous_error_message("folder", args.folder_ref, ambiguous, "path"))
-            parser.error(f"folder not found: {args.folder_ref}")
+                parser.error(ambiguous_error_message("folder", folder_ref, ambiguous, "path"))
+            parser.error(f"folder not found: {folder_ref}")
 
         selected, candidates = choose_current_daily_document(
             docs,

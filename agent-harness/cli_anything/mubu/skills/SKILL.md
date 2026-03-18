@@ -21,6 +21,7 @@ pip install -e .
 - Python 3.10+
 - An active Mubu desktop session on this machine
 - Local Mubu profile data available to the CLI
+- Set `MUBU_DAILY_FOLDER` if you want no-argument daily helpers
 
 ## Entry Points
 
@@ -36,7 +37,7 @@ When invoked without a subcommand, the CLI enters an interactive REPL session.
 
 ### Discover
 
-Discovery commands for folders, documents, recency, and Daily tasks resolution.
+Discovery commands for folders, documents, recency, and daily-document resolution.
 
 | Command | Description |
 |---------|-------------|
@@ -123,9 +124,9 @@ Session and state commands for current document/node context and local command h
 ## Recommended Agent Workflow
 
 ```text
-discover daily-current --json
+discover daily-current '<daily-folder-ref>' --json
         ->
-inspect daily-nodes --query '<anchor>' --json
+inspect daily-nodes '<daily-folder-ref>' --query '<anchor>' --json
         ->
 session use-doc '<doc_path>'
         ->
@@ -143,6 +144,7 @@ mutate update-text / create-child / delete-node --json
 5. Prefer `--node-id` and `--parent-node-id` over text matching.
 6. `delete-node` removes the full targeted subtree.
 7. Even same-text updates can still advance document version history.
+8. Pass a daily-folder reference explicitly or set `MUBU_DAILY_FOLDER` before using no-arg daily helpers.
 
 ## Examples
 
@@ -161,10 +163,10 @@ cli-anything-mubu
 
 ### Discover Current Daily Note
 
-Resolve the current daily note and emit JSON output for an agent.
+Resolve the current daily note from an explicit folder reference.
 
 ```bash
-cli-anything-mubu --json discover daily-current
+cli-anything-mubu --json discover daily-current '<daily-folder-ref>'
 ```
 
 
@@ -173,7 +175,7 @@ cli-anything-mubu --json discover daily-current
 Inspect the exact outgoing payload before a live mutation.
 
 ```bash
-cli-anything-mubu mutate update-text 'Workspace/Daily tasks/26.03.16' --node-id node-demo1 --text 'new text' --json
+cli-anything-mubu mutate update-text '<doc-ref>' --node-id <node-id> --text 'new text' --json
 ```
 
 

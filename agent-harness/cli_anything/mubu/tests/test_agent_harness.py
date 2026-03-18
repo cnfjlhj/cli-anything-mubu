@@ -126,6 +126,10 @@ class AgentHarnessPackagingTests(unittest.TestCase):
             self.assertIn("### Session", content)
             self.assertIn("| `status` |", content)
             self.assertIn("| `state-path` |", content)
+            self.assertIn("MUBU_DAILY_FOLDER", content)
+            self.assertNotIn("Workspace/Daily tasks", content)
+            self.assertNotIn("Daily tasks resolution", content)
+            self.assertIn("## Version\n\n0.1.0", content)
         finally:
             output_path.unlink(missing_ok=True)
 

@@ -23,6 +23,7 @@ What this gives you:
 - the canonical implementation now lives inside this directory
 - the same `cli-anything-mubu` console script is exposed
 - the main CLI is Click-based with grouped command domains
+- no-argument daily helpers only work when `MUBU_DAILY_FOLDER` is configured
 - `skill_generator.py` can regenerate the packaged `skills/SKILL.md`
 
 Canonical implementation now lives under:
@@ -47,4 +48,5 @@ Current state:
 - canonical package source is now under `agent-harness/cli_anything/mubu/...`
 - root-level wrappers preserve backward compatibility during development
 - grouped `discover` / `inspect` / `mutate` / `session` commands now exist
+- daily-note helpers require an explicit folder reference unless `MUBU_DAILY_FOLDER` is set
 - the packaged `SKILL.md` is now generated from the canonical harness

@@ -51,7 +51,7 @@ Builtins:
   exit, quit        Leave the REPL
   use-doc <ref>     Set the current document reference for this REPL session
   use-node <id>     Set the current node reference for this REPL session
-  use-daily         Resolve and set the current daily document
+  use-daily [ref]   Resolve and set the current daily document
   current-doc       Show the current document reference
   current-node      Show the current node reference
   clear-doc         Clear the current document reference
@@ -62,13 +62,15 @@ Builtins:
 
 Examples:
   recent --limit 5 --json
-  discover daily-current
-  discover daily-current --json
-  inspect daily-nodes --query 日志流 --json
-  session use-doc 'Workspace/Daily tasks/26.03.16'
-  mutate create-child @doc --parent-node-id node-demo1 --text 'scratch child' --json
+  discover daily-current '<daily-folder-ref>'
+  discover daily-current --json '<daily-folder-ref>'
+  inspect daily-nodes '<daily-folder-ref>' --query '<anchor>' --json
+  session use-doc '<doc-ref>'
+  mutate create-child @doc --parent-node-id <node-id> --text 'scratch child' --json
   mutate delete-node @doc --node-id @node --json
-  update-text 'Workspace/Daily tasks/26.03.16' --node-id node-demo1 --text 'new text' --json
+  update-text '<doc-ref>' --node-id <node-id> --text 'new text' --json
+
+If you prefer no-argument daily helpers, set MUBU_DAILY_FOLDER='<daily-folder-ref>'.
 """
 
 
@@ -156,14 +158,15 @@ def append_command_history(command_line: str) -> None:
     save_session_state(session)
 
 
-def resolve_current_daily_doc_ref(folder_ref: str = "Daily tasks") -> str:
+def resolve_current_daily_doc_ref(folder_ref: str | None = None) -> str:
+    resolved_folder_ref = mubu_probe.resolve_daily_folder_ref(folder_ref)
     metas = mubu_probe.load_document_metas(mubu_probe.DEFAULT_STORAGE_ROOT)
     folders = mubu_probe.load_folders(mubu_probe.DEFAULT_STORAGE_ROOT)
-    docs, folder, ambiguous = mubu_probe.folder_documents(metas, folders, folder_ref)
+    docs, folder, ambiguous = mubu_probe.folder_documents(metas, folders, resolved_folder_ref)
     if folder is None:
         if ambiguous:
-            raise RuntimeError(mubu_probe.ambiguous_error_message("folder", folder_ref, ambiguous, "path"))
-        raise RuntimeError(f"folder not found: {folder_ref}")
+            raise RuntimeError(mubu_probe.ambiguous_error_message("folder", resolved_folder_ref, ambiguous, "path"))
+        raise RuntimeError(f"folder not found: {resolved_folder_ref}")
     selected, _ = mubu_probe.choose_current_daily_document(docs)
     if selected is None or not selected.get("doc_path"):
         raise RuntimeError(f"no current daily document found in {folder['path']}")
@@ -334,15 +337,16 @@ def handle_repl_builtin(argv: list[str], session: dict[str, object]) -> tuple[bo
         click.echo(f"Current node: {node_ref}")
         return True, 0
     if command == "use-daily":
-        folder_ref = " ".join(argv[1:]) if len(argv) > 1 else "Daily tasks"
+        folder_ref = " ".join(argv[1:]).strip() if len(argv) > 1 else None
         try:
-            doc_ref = resolve_current_daily_doc_ref(folder_ref)
+            resolved_folder_ref = mubu_probe.resolve_daily_folder_ref(folder_ref)
+            doc_ref = resolve_current_daily_doc_ref(resolved_folder_ref)
         except RuntimeError as exc:
             click.echo(str(exc), err=True)
             return True, 0
         session["current_doc"] = doc_ref
         save_session_state(session)
-        append_command_history(f"use-daily {folder_ref}".strip())
+        append_command_history(f"use-daily {resolved_folder_ref}")
         click.echo(f"Current doc: {doc_ref}")
         return True, 0
 
@@ -408,7 +412,7 @@ def cli(ctx: click.Context, json_output: bool) -> int:
 
 @cli.group(context_settings=CONTEXT_SETTINGS)
 def discover() -> None:
-    """Discovery commands for folders, documents, recency, and Daily tasks resolution."""
+    """Discovery commands for folders, documents, recency, and daily-document resolution."""
 
 
 @discover.command("docs", context_settings=CONTEXT_SETTINGS, add_help_option=False)
@@ -618,12 +622,16 @@ def use_node(node_ref: tuple[str, ...]) -> int:
 @click.argument("folder_ref", nargs=-1)
 def use_daily(folder_ref: tuple[str, ...]) -> int:
     """Resolve and persist the current daily document reference."""
-    value = " ".join(folder_ref) if folder_ref else "Daily tasks"
-    doc_ref = resolve_current_daily_doc_ref(value)
+    raw_value = " ".join(folder_ref).strip() if folder_ref else None
+    try:
+        resolved_folder_ref = mubu_probe.resolve_daily_folder_ref(raw_value)
+        doc_ref = resolve_current_daily_doc_ref(resolved_folder_ref)
+    except RuntimeError as exc:
+        raise click.ClickException(str(exc)) from exc
     session_state = load_session_state()
     session_state["current_doc"] = doc_ref
     save_session_state(session_state)
-    append_command_history(f"session use-daily {value}".strip())
+    append_command_history(f"session use-daily {resolved_folder_ref}")
     click.echo(f"Current doc: {doc_ref}")
     return 0
 
