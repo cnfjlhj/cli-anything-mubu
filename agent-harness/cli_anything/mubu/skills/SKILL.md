@@ -96,6 +96,29 @@ Mutation commands for dry-run-first atomic live edits against the Mubu API.
 
 
 
+### Workflow
+
+Workflow commands for entering a document, focusing a node, inspecting context, and continuing writing.
+
+| Command | Description |
+|---------|-------------|
+
+| `daily-open` | Resolve the current daily document and persist it as the active workflow document. |
+
+| `today-start` | Create or open today's daily document from the latest dated template panel. |
+
+| `today-scan` | Scan the latest daily document and extract today's actionable sections. |
+
+| `pick` | Select one live node in the active document and persist it as the current workflow node. |
+
+| `ctx` | Show focused live context for the current node, including parent, siblings, and children. |
+
+| `append` | Append one child under the current node using the dry-run-first live mutation flow. |
+
+| `capture` | Capture one child into the current daily or current document in one step. |
+
+
+
 ### Session
 
 Session and state commands for current document/node context and local command history.
@@ -124,15 +147,15 @@ Session and state commands for current document/node context and local command h
 ## Recommended Agent Workflow
 
 ```text
-discover daily-current '<daily-folder-ref>' --json
+workflow today-start '<daily-folder-ref>' --json
         ->
-inspect daily-nodes '<daily-folder-ref>' --query '<anchor>' --json
+workflow pick --query '<anchor>' --json
         ->
-session use-doc '<doc_path>'
+workflow ctx --json
         ->
-mutate update-text / create-child / delete-node --json
+workflow append / capture --json
         ->
---execute only after payload inspection
+--execute only for node mutations after payload inspection
 ```
 
 ## Safety Rules
@@ -167,6 +190,15 @@ Resolve the current daily note from an explicit folder reference.
 
 ```bash
 cli-anything-mubu --json discover daily-current '<daily-folder-ref>'
+```
+
+
+### Create Or Reopen Today's Daily Doc
+
+Create today's daily document from the latest dated template panel, or reopen it if it already exists.
+
+```bash
+cli-anything-mubu workflow today-start '<daily-folder-ref>' --json
 ```
 
 

@@ -3,21 +3,28 @@ import io
 import json
 import tempfile
 import unittest
+from datetime import date
 from pathlib import Path
 from unittest import mock
 
 from mubu_probe import (
     build_api_headers,
+    build_copy_doc_request,
     build_create_child_request,
     build_delete_node_request,
+    build_rename_doc_request,
     build_text_update_request,
     choose_current_daily_document,
+    choose_daily_template_source,
     document_links,
     extract_doc_links,
     extract_plain_text,
+    find_daily_document_for_date,
+    format_daily_title_for_date,
     folder_documents,
     latest_doc_member_context,
     list_document_nodes,
+    load_document_metas,
     load_latest_backups,
     looks_like_daily_title,
     main,
@@ -25,6 +32,7 @@ from mubu_probe import (
     normalize_document_meta_record,
     normalize_folder_record,
     normalize_user_record,
+    parse_daily_title_date,
     parent_context_for_path,
     parse_client_sync_line,
     resolve_document_reference,
@@ -95,6 +103,46 @@ class SearchTests(unittest.TestCase):
         self.assertEqual(hits[0]["node_id"], "n1")
         self.assertEqual(hits[0]["text"], "简历做一下更新")
 
+    def test_search_command_prefers_metadata_title_when_available(self):
+        docs = [
+            {
+                "doc_id": "docA",
+                "backup_file": "/tmp/docA.json",
+                "title": "backup title",
+                "data": {
+                    "nodes": [
+                        {
+                            "id": "n1",
+                            "text": "<span>小确幸</span>",
+                            "note": "",
+                            "children": [],
+                        }
+                    ]
+                },
+            }
+        ]
+        metas = [
+            {
+                "doc_id": "docA",
+                "folder_id": "dailyA",
+                "title": "日记/复盘/小确幸 集结地（1）",
+                "updated_at": 20,
+            }
+        ]
+
+        stdout = io.StringIO()
+        with (
+            mock.patch("mubu_probe.load_latest_backups", return_value=docs),
+            mock.patch("mubu_probe.load_document_metas", return_value=metas),
+            contextlib.redirect_stdout(stdout),
+        ):
+            result = main(["search", "小确幸", "--json"])
+
+        self.assertEqual(result, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload[0]["doc_id"], "docA")
+        self.assertEqual(payload[0]["title"], "日记/复盘/小确幸 集结地（1）")
+
 
 class ClientSyncParsingTests(unittest.TestCase):
     def test_parse_client_sync_line_extracts_change_request(self):
@@ -161,6 +209,89 @@ class DocumentMetaNormalizationTests(unittest.TestCase):
         self.assertEqual(normalized["updated_at"], 1764003934105)
         self.assertEqual(normalized["word_count"], 48)
         self.assertEqual(normalized["source"], "NewSyncApp")
+
+    def test_load_document_metas_merges_recent_app_log_document_name_for_template_created_doc(self):
+        with tempfile.TemporaryDirectory() as storage_tmp, tempfile.TemporaryDirectory() as log_tmp:
+            storage_root = Path(storage_tmp)
+            log_root = Path(log_tmp)
+
+            document_meta_dir = storage_root / "mubu_desktop_app-rxdb-1-document_meta"
+            document_meta_dir.mkdir(parents=True)
+            (document_meta_dir / "000001.log").write_text(
+                "\n".join(
+                    [
+                        json.dumps(
+                            {
+                                "id": "doc-old",
+                                "|h": "dailyA",
+                                "|n": "26.3.18",
+                                "|e": 100,
+                                "|m": 200,
+                                "|j": 1,
+                                "|d": "NewSyncApp",
+                                "_rev": "1-old",
+                            },
+                            ensure_ascii=False,
+                        )
+                    ]
+                )
+            )
+
+            app_log_lines = [
+                (
+                    '[2026-03-22T15:39:15.103] [INFO] TransferNet - Intercept '
+                    'URL[/v3/api/template/set_doc] options:  '
+                    + json.dumps(
+                        {
+                            "url": "/v3/api/template/set_doc",
+                            "data": {"docId": "doc-new", "folderId": "dailyA"},
+                            "windowId": 1,
+                        },
+                        ensure_ascii=False,
+                    )
+                ),
+                (
+                    '[2026-03-22T15:39:43.627] [INFO] TransferNet - Pass '
+                    'URL[/v3/api/document/get_doc_name] options: '
+                    + json.dumps(
+                        {
+                            "url": "/v3/api/document/get_doc_name",
+                            "data": {"docId": "doc-new"},
+                            "windowId": 1,
+                        },
+                        ensure_ascii=False,
+                    )
+                ),
+                (
+                    '[2026-03-22T15:39:43.661] [INFO] TransferNet - Pass '
+                    'URL[/v3/api/document/get_doc_name] Response:  '
+                    + json.dumps(
+                        {
+                            "code": 0,
+                            "data": json.dumps(
+                                {"name": "26.3.22", "ct": 300, "ut": 400},
+                                ensure_ascii=False,
+                            ),
+                        },
+                        ensure_ascii=False,
+                    )
+                ),
+            ]
+            (log_root / "app.log").write_text("\n".join(app_log_lines))
+
+            metas = load_document_metas(storage_root, log_root=log_root)
+            folders = [
+                {"folder_id": "rootA", "name": "博一", "parent_id": "0"},
+                {"folder_id": "dailyA", "name": "Daily tasks", "parent_id": "rootA"},
+            ]
+
+            docs, folder, ambiguous = folder_documents(metas, folders, "博一/Daily tasks")
+            selected, _ = choose_current_daily_document(docs)
+
+        self.assertEqual(ambiguous, [])
+        self.assertEqual(folder["folder_id"], "dailyA")
+        self.assertEqual(selected["doc_id"], "doc-new")
+        self.assertEqual(selected["title"], "26.3.22")
 
 
 class LinkExtractionTests(unittest.TestCase):
@@ -267,6 +398,49 @@ class PathResolutionTests(unittest.TestCase):
 
         self.assertEqual(ambiguous, [])
         self.assertEqual(doc["doc_id"], "new-low-rev")
+
+    def test_resolve_document_reference_keeps_raw_doc_id_lookup_even_if_logical_path_dedupes_to_newer_doc(self):
+        folders = [
+            {"folder_id": "rootA", "name": "Workspace", "parent_id": "0"},
+            {"folder_id": "dailyA", "name": "Daily tasks", "parent_id": "rootA"},
+        ]
+        metas = [
+            {"doc_id": "old-doc", "folder_id": "dailyA", "title": "Shared", "updated_at": 10},
+            {"doc_id": "new-doc", "folder_id": "dailyA", "title": "Shared", "updated_at": 20},
+        ]
+
+        doc, ambiguous = resolve_document_reference(metas, folders, "old-doc")
+
+        self.assertEqual(ambiguous, [])
+        self.assertEqual(doc["doc_id"], "old-doc")
+        self.assertEqual(doc["doc_path"], "Workspace/Daily tasks/Shared")
+
+    def test_resolve_document_reference_can_fallback_to_backup_doc_id_when_metadata_is_missing(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            backup_root = Path(tmpdir)
+            doc_dir = backup_root / "doc-backup-only"
+            doc_dir.mkdir()
+            (doc_dir / "2026-03-23 09'00.json").write_text(
+                json.dumps(
+                    {
+                        "nodes": [
+                            {
+                                "id": "n1",
+                                "text": "<span>Backup Only Title</span>",
+                                "children": [],
+                            }
+                        ]
+                    }
+                )
+            )
+
+            with mock.patch("mubu_probe.DEFAULT_BACKUP_ROOT", backup_root):
+                doc, ambiguous = resolve_document_reference(self.document_metas, self.folders, "doc-backup-only")
+
+        self.assertEqual(ambiguous, [])
+        self.assertEqual(doc["doc_id"], "doc-backup-only")
+        self.assertEqual(doc["title"], "Backup Only Title")
+        self.assertEqual(doc["doc_path"], "doc-backup-only")
 
     def test_show_document_by_reference_uses_resolved_path(self):
         payload, ambiguous = show_document_by_reference(
@@ -409,6 +583,20 @@ class DocumentNodeListingTests(unittest.TestCase):
 
 
 class DailySelectionTests(unittest.TestCase):
+    def test_parse_daily_title_date_accepts_template_suffixes_and_ranges(self):
+        self.assertEqual(parse_daily_title_date("26.3.22模板"), date(2026, 3, 22))
+        self.assertEqual(parse_daily_title_date("26.03.21模板更新"), date(2026, 3, 21))
+        self.assertEqual(parse_daily_title_date("26.3.19-20"), date(2026, 3, 19))
+        self.assertEqual(parse_daily_title_date("2026年3月18日"), date(2026, 3, 18))
+        self.assertEqual(parse_daily_title_date("3.17模板", default_year=2026), date(2026, 3, 17))
+        self.assertIsNone(parse_daily_title_date("DDL表"))
+
+    def test_format_daily_title_for_date_preserves_source_style_and_strips_template_suffix(self):
+        self.assertEqual(format_daily_title_for_date("26.3.22模板", date(2026, 3, 23)), "26.3.23")
+        self.assertEqual(format_daily_title_for_date("26.03.22模板更新", date(2026, 3, 23)), "26.03.23")
+        self.assertEqual(format_daily_title_for_date("2026年3月22日模板", date(2026, 3, 23)), "2026年3月23日")
+        self.assertEqual(format_daily_title_for_date("3.22模板", date(2026, 3, 23)), "3.23")
+
     def test_looks_like_daily_title_accepts_date_titles_and_rejects_templates(self):
         self.assertTrue(looks_like_daily_title("26.03.16"))
         self.assertTrue(looks_like_daily_title("26.3.8-3.9"))
@@ -449,6 +637,53 @@ class DailySelectionTests(unittest.TestCase):
         selected, candidates = choose_current_daily_document(docs, allow_non_daily_titles=True)
         self.assertEqual(selected["doc_id"], "ddl")
         self.assertEqual([item["doc_id"] for item in candidates], ["ddl", "template"])
+
+    def test_find_daily_document_for_date_prefers_non_template_doc(self):
+        docs = [
+            {"doc_id": "today-template", "title": "26.3.23模板", "updated_at": 120},
+            {"doc_id": "today", "title": "26.3.23", "updated_at": 110},
+            {"doc_id": "older", "title": "26.3.22", "updated_at": 100},
+        ]
+
+        selected, candidates = find_daily_document_for_date(docs, date(2026, 3, 23))
+
+        self.assertEqual(selected["doc_id"], "today")
+        self.assertEqual([item["doc_id"] for item in candidates], ["today"])
+
+    def test_choose_daily_template_source_prefers_latest_template_panel_for_latest_date(self):
+        docs = [
+            {"doc_id": "today", "title": "26.3.23", "updated_at": 140},
+            {"doc_id": "latest-template", "title": "26.3.22模板", "updated_at": 130},
+            {"doc_id": "latest-filled", "title": "26.3.22", "updated_at": 120},
+            {"doc_id": "older-template", "title": "26.3.21模板", "updated_at": 200},
+        ]
+
+        selected, candidates = choose_daily_template_source(docs, date(2026, 3, 23))
+
+        self.assertEqual(selected["doc_id"], "latest-template")
+        self.assertEqual(
+            [item["doc_id"] for item in candidates],
+            ["latest-template", "latest-filled", "older-template"],
+        )
+
+
+class DocumentMutationRequestTests(unittest.TestCase):
+    def test_build_copy_doc_request_uses_source_document_id(self):
+        request = build_copy_doc_request("doc-source-1")
+
+        self.assertEqual(request["pathname"], "/v3/api/list/copy_doc")
+        self.assertEqual(request["method"], "POST")
+        self.assertEqual(request["data"], {"id": "doc-source-1"})
+
+    def test_build_rename_doc_request_uses_document_id_and_name(self):
+        request = build_rename_doc_request("doc-target-1", "26.3.23")
+
+        self.assertEqual(request["pathname"], "/v3/api/list/rename_doc")
+        self.assertEqual(request["method"], "POST")
+        self.assertEqual(
+            request["data"],
+            {"documentId": "doc-target-1", "name": "26.3.23"},
+        )
 
 
 class WritePathTests(unittest.TestCase):

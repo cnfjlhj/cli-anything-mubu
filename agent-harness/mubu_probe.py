@@ -12,7 +12,7 @@ import re
 import secrets
 import string
 import sys
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from json import JSONDecoder
 from pathlib import Path
 from typing import Any, Iterable, Mapping
@@ -92,6 +92,19 @@ DAILY_TITLE_PATTERNS = (
 )
 DEFAULT_DAILY_EXCLUDE_KEYWORDS = ("模板", "template")
 DEFAULT_DAILY_FOLDER_KEYWORDS = ("daily", "diary", "journal", "日记", "日志", "每日", "每天", "日常")
+SHORT_YEAR_DAILY_TITLE_RE = re.compile(
+    r"^(?P<year>\d{2})(?P<sep>[./-])(?P<month>\d{1,2})(?P=sep)(?P<day>\d{1,2})"
+    r"(?:-(?:\d{1,2}(?:(?P=sep)\d{1,2})?))?(?P<suffix>.*)$"
+)
+FULL_YEAR_DAILY_TITLE_RE = re.compile(
+    r"^(?P<year>\d{4})(?P<sep>[./-])(?P<month>\d{1,2})(?P=sep)(?P<day>\d{1,2})(?P<suffix>.*)$"
+)
+MONTH_DAY_DAILY_TITLE_RE = re.compile(
+    r"^(?P<month>\d{1,2})(?P<sep>[./-])(?P<day>\d{1,2})(?P<suffix>.*)$"
+)
+CN_DAILY_TITLE_RE = re.compile(
+    r"^(?:(?P<year>\d{4})年)?(?P<month>\d{1,2})月(?P<day>\d{1,2})日(?P<suffix>.*)$"
+)
 
 
 def configured_daily_folder_ref(env: Mapping[str, str] | None = None) -> str | None:
@@ -211,6 +224,131 @@ def parse_event_timestamp_ms(value: str | None) -> int | None:
     except ValueError:
         return None
     return int(dt.timestamp() * 1000)
+
+
+def current_local_date() -> date:
+    return datetime.now().astimezone().date()
+
+
+def title_has_template_keyword(
+    title: str | None,
+    keywords: Iterable[str] = DEFAULT_DAILY_EXCLUDE_KEYWORDS,
+) -> bool:
+    lowered = normalized_lookup_key(title)
+    if not lowered:
+        return False
+    return any(keyword.casefold() in lowered for keyword in keywords)
+
+
+def _daily_title_sort_timestamp(doc: Mapping[str, Any]) -> int:
+    return max(
+        numeric_values(doc.get("updated_at"), doc.get("created_at")),
+        default=0,
+    )
+
+
+def parse_daily_title_date(
+    title: str | None,
+    default_year: int | None = None,
+) -> date | None:
+    if not isinstance(title, str):
+        return None
+    text = title.strip()
+    if not text:
+        return None
+    default_year = default_year or current_local_date().year
+
+    match = FULL_YEAR_DAILY_TITLE_RE.match(text)
+    if match:
+        try:
+            return date(
+                int(match.group("year")),
+                int(match.group("month")),
+                int(match.group("day")),
+            )
+        except ValueError:
+            return None
+
+    match = CN_DAILY_TITLE_RE.match(text)
+    if match:
+        try:
+            return date(
+                int(match.group("year") or default_year),
+                int(match.group("month")),
+                int(match.group("day")),
+            )
+        except ValueError:
+            return None
+
+    match = SHORT_YEAR_DAILY_TITLE_RE.match(text)
+    if match:
+        try:
+            return date(
+                2000 + int(match.group("year")),
+                int(match.group("month")),
+                int(match.group("day")),
+            )
+        except ValueError:
+            return None
+
+    match = MONTH_DAY_DAILY_TITLE_RE.match(text)
+    if match:
+        try:
+            return date(
+                int(default_year),
+                int(match.group("month")),
+                int(match.group("day")),
+            )
+        except ValueError:
+            return None
+
+    return None
+
+
+def _format_width(value: int, width: int) -> str:
+    return str(value).zfill(max(1, width))
+
+
+def format_daily_title_for_date(source_title: str | None, target_date: date) -> str:
+    text = (source_title or "").strip()
+
+    match = FULL_YEAR_DAILY_TITLE_RE.match(text)
+    if match:
+        separator = match.group("sep")
+        return (
+            f"{_format_width(target_date.year, len(match.group('year')))}"
+            f"{separator}{_format_width(target_date.month, len(match.group('month')))}"
+            f"{separator}{_format_width(target_date.day, len(match.group('day')))}"
+        )
+
+    match = CN_DAILY_TITLE_RE.match(text)
+    if match:
+        year = match.group("year")
+        prefix = f"{_format_width(target_date.year, len(year))}年" if year else ""
+        return (
+            f"{prefix}"
+            f"{_format_width(target_date.month, len(match.group('month')))}月"
+            f"{_format_width(target_date.day, len(match.group('day')))}日"
+        )
+
+    match = SHORT_YEAR_DAILY_TITLE_RE.match(text)
+    if match:
+        separator = match.group("sep")
+        return (
+            f"{_format_width(target_date.year % 100, len(match.group('year')))}"
+            f"{separator}{_format_width(target_date.month, len(match.group('month')))}"
+            f"{separator}{_format_width(target_date.day, len(match.group('day')))}"
+        )
+
+    match = MONTH_DAY_DAILY_TITLE_RE.match(text)
+    if match:
+        separator = match.group("sep")
+        return (
+            f"{_format_width(target_date.month, len(match.group('month')))}"
+            f"{separator}{_format_width(target_date.day, len(match.group('day')))}"
+        )
+
+    return f"{target_date.year % 100:02d}.{target_date.month}.{target_date.day}"
 
 
 def iter_json_objects_from_text(text: str) -> Iterable[dict[str, Any]]:
@@ -334,16 +472,220 @@ def normalize_document_meta_record(raw: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def load_document_metas(storage_root: Path = DEFAULT_STORAGE_ROOT) -> list[dict[str, Any]]:
+def parse_json_after_marker(line: str, marker: str) -> dict[str, Any] | None:
+    _, found, suffix = line.partition(marker)
+    if not found:
+        return None
+    try:
+        payload = json.loads(suffix.strip())
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def parse_embedded_json_object(value: Any) -> dict[str, Any] | None:
+    if isinstance(value, dict):
+        return value
+    if not isinstance(value, str):
+        return None
+    try:
+        payload = json.loads(value)
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def iter_app_log_files(log_root: Path) -> list[Path]:
+    return sorted(
+        [path for path in log_root.glob("app*.log*") if path.is_file()],
+        key=lambda path: path.stat().st_mtime,
+    )
+
+
+def load_document_metas_from_app_logs(log_root: Path = DEFAULT_LOG_ROOT) -> list[dict[str, Any]]:
+    if not log_root.exists():
+        return []
+
+    overlay: dict[str, dict[str, Any]] = {}
+    pending_get_doc_name_doc_id: str | None = None
+    pending_template_set_doc: dict[str, str] | None = None
+
+    def merge(
+        doc_id: str | None,
+        *,
+        folder_id: str | None = None,
+        title: str | None = None,
+        created_at: int | None = None,
+        updated_at: int | None = None,
+        source: str | None = None,
+        rev: str | None = None,
+    ) -> None:
+        if not isinstance(doc_id, str) or not doc_id:
+            return
+        current = overlay.setdefault(
+            doc_id,
+            {
+                "doc_id": doc_id,
+                "folder_id": "0",
+                "title": None,
+                "created_at": None,
+                "created_at_iso": None,
+                "updated_at": None,
+                "updated_at_iso": None,
+                "word_count": None,
+                "source": "app.log",
+                "rev": None,
+            },
+        )
+        if isinstance(folder_id, str) and folder_id:
+            current["folder_id"] = folder_id
+        if isinstance(title, str):
+            normalized_title = title.strip()
+            if normalized_title:
+                current["title"] = normalized_title
+        if isinstance(created_at, int):
+            existing_created_at = current.get("created_at")
+            if existing_created_at is None or created_at < existing_created_at:
+                current["created_at"] = created_at
+                current["created_at_iso"] = timestamp_ms_to_iso(created_at)
+        if isinstance(updated_at, int):
+            existing_updated_at = current.get("updated_at")
+            if existing_updated_at is None or updated_at >= existing_updated_at:
+                current["updated_at"] = updated_at
+                current["updated_at_iso"] = timestamp_ms_to_iso(updated_at)
+        if isinstance(source, str) and source:
+            current["source"] = source
+        if isinstance(rev, str) and rev:
+            current["rev"] = rev
+
+    for path in iter_app_log_files(log_root):
+        for line in read_log_text(path).splitlines():
+            if "SyncService - Execute MetaSync:" in line:
+                payload = parse_json_after_marker(line, "Execute MetaSync: ")
+                if payload is None:
+                    continue
+                source_documents = payload.get("sourceDocuments") or {}
+                if isinstance(source_documents, dict):
+                    for item in source_documents.values():
+                        if not isinstance(item, dict):
+                            continue
+                        merge(
+                            item.get("id"),
+                            folder_id=item.get("folderId"),
+                            title=item.get("name"),
+                            created_at=item.get("createTime") if isinstance(item.get("createTime"), int) else None,
+                            updated_at=item.get("updateTime") if isinstance(item.get("updateTime"), int) else None,
+                            source="app.log:metasync",
+                            rev=item.get("_id"),
+                        )
+                modifications = payload.get("modification") or []
+                if isinstance(modifications, list):
+                    for item in modifications:
+                        if not isinstance(item, dict) or item.get("type") != "document":
+                            continue
+                        content = parse_embedded_json_object(item.get("content"))
+                        if content is None:
+                            continue
+                        merge(
+                            content.get("id") or item.get("id"),
+                            folder_id=content.get("folderId"),
+                            title=content.get("name"),
+                            created_at=content.get("createTime") if isinstance(content.get("createTime"), int) else None,
+                            updated_at=content.get("updateTime") if isinstance(content.get("updateTime"), int) else None,
+                            source="app.log:metasync",
+                            rev=item.get("_id"),
+                        )
+                continue
+
+            if "URL[/v3/api/template/set_doc] options:" in line:
+                payload = parse_json_after_marker(line, "options:  ") or parse_json_after_marker(line, "options: ")
+                data = payload.get("data") if isinstance(payload, dict) else None
+                if isinstance(data, dict):
+                    pending_template_set_doc = {
+                        "doc_id": str(data.get("docId") or ""),
+                        "folder_id": str(data.get("folderId") or ""),
+                    }
+                    merge(
+                        pending_template_set_doc["doc_id"],
+                        folder_id=pending_template_set_doc["folder_id"],
+                        source="app.log:template-set-doc",
+                    )
+                continue
+
+            if "URL[/v3/api/template/set_doc] Response:" in line:
+                payload = parse_json_after_marker(line, "Response:  ") or parse_json_after_marker(line, "Response: ")
+                data = parse_embedded_json_object(payload.get("data")) if isinstance(payload, dict) else None
+                if pending_template_set_doc is not None:
+                    merge(
+                        data.get("docId") if isinstance(data, dict) else pending_template_set_doc.get("doc_id"),
+                        folder_id=pending_template_set_doc.get("folder_id"),
+                        title=data.get("name") if isinstance(data, dict) else None,
+                        source="app.log:template-set-doc",
+                    )
+                continue
+
+            if "URL[/v3/api/document/get_doc_name] options:" in line:
+                payload = parse_json_after_marker(line, "options:  ") or parse_json_after_marker(line, "options: ")
+                data = payload.get("data") if isinstance(payload, dict) else None
+                if isinstance(data, dict) and isinstance(data.get("docId"), str):
+                    pending_get_doc_name_doc_id = data["docId"]
+                continue
+
+            if "URL[/v3/api/document/get_doc_name] Response:" in line:
+                payload = parse_json_after_marker(line, "Response:  ") or parse_json_after_marker(line, "Response: ")
+                data = parse_embedded_json_object(payload.get("data")) if isinstance(payload, dict) else None
+                if data is None:
+                    continue
+                merge(
+                    pending_get_doc_name_doc_id,
+                    title=data.get("name"),
+                    created_at=data.get("ct") if isinstance(data.get("ct"), int) else None,
+                    updated_at=data.get("ut") if isinstance(data.get("ut"), int) else None,
+                    source="app.log:get-doc-name",
+                )
+                continue
+
+            if "edit-win options " in line:
+                payload = parse_json_after_marker(line, "edit-win options ")
+                if payload is None:
+                    continue
+                title = payload.get("title")
+                if isinstance(title, str):
+                    title = title.removesuffix(" - 幕布").strip()
+                merge(
+                    payload.get("id"),
+                    title=title,
+                    source="app.log:edit-win",
+                )
+
+    return list(overlay.values())
+
+
+def load_document_metas(
+    storage_root: Path = DEFAULT_STORAGE_ROOT,
+    log_root: Path | None = DEFAULT_LOG_ROOT,
+) -> list[dict[str, Any]]:
     records = load_collection_records(
         storage_root,
         "mubu_desktop_app-rxdb-1-document_meta*/*",
         lambda obj: "|n" in obj and "|h" in obj and isinstance(obj.get("id"), str),
     )
-    return [
+    metas = [
         normalize_document_meta_record(record)
         for record in dedupe_latest_records(records, timestamp_fields=["|m", "|B", "|z", "|e"])
     ]
+    if log_root is not None:
+        metas.extend(load_document_metas_from_app_logs(log_root=log_root))
+
+    latest_by_doc_id: dict[str, dict[str, Any]] = {}
+    for meta in metas:
+        doc_id = meta.get("doc_id")
+        if not isinstance(doc_id, str) or not doc_id:
+            continue
+        current = latest_by_doc_id.get(doc_id)
+        if current is None or document_meta_sort_key(meta) >= document_meta_sort_key(current):
+            latest_by_doc_id[doc_id] = meta
+    return list(latest_by_doc_id.values())
 
 
 def build_folder_indexes(folders: Iterable[dict[str, Any]]) -> tuple[dict[str, dict[str, Any]], dict[str, str]]:
@@ -546,9 +888,15 @@ def extract_doc_links(value: Any) -> list[dict[str, Any]]:
     return links
 
 
-def search_documents(documents: Iterable[dict[str, Any]], query: str, limit: int | None = None) -> list[dict[str, Any]]:
+def search_documents(
+    documents: Iterable[dict[str, Any]],
+    query: str,
+    limit: int | None = None,
+    title_lookup: dict[str, str] | None = None,
+) -> list[dict[str, Any]]:
     normalized_query = query.lower()
     hits: list[dict[str, Any]] = []
+    title_lookup = title_lookup or {}
 
     for document in documents:
         for path, node in iter_nodes(document["data"].get("nodes", [])):
@@ -561,7 +909,7 @@ def search_documents(documents: Iterable[dict[str, Any]], query: str, limit: int
             hits.append(
                 {
                     "doc_id": document["doc_id"],
-                    "title": document["title"],
+                    "title": title_lookup.get(document["doc_id"]) or document["title"],
                     "backup_file": document["backup_file"],
                     "path": list(path),
                     "node_id": node.get("id"),
@@ -741,14 +1089,60 @@ def choose_current_daily_document(
 ) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
     sorted_docs = sorted(
         docs,
-        key=lambda item: max(
-            numeric_values(item.get("updated_at"), item.get("created_at")),
-            default=0,
+        key=lambda item: (
+            parse_daily_title_date(item.get("title")) or date.min,
+            _daily_title_sort_timestamp(item),
         ),
         reverse=True,
     )
     dated_docs = [doc for doc in sorted_docs if looks_like_daily_title(doc.get("title"))]
     candidates = dated_docs if dated_docs else (sorted_docs if allow_non_daily_titles else [])
+    return (candidates[0] if candidates else None), candidates
+
+
+def find_daily_document_for_date(
+    docs: Iterable[dict[str, Any]],
+    target_date: date,
+) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
+    candidates = [
+        doc
+        for doc in docs
+        if not title_has_template_keyword(doc.get("title"))
+        and parse_daily_title_date(doc.get("title"), default_year=target_date.year) == target_date
+    ]
+    candidates.sort(key=_daily_title_sort_timestamp, reverse=True)
+    return (candidates[0] if candidates else None), candidates
+
+
+def choose_daily_template_source(
+    docs: Iterable[dict[str, Any]],
+    target_date: date,
+) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
+    earlier: list[tuple[date, dict[str, Any]]] = []
+    fallback: list[tuple[date, dict[str, Any]]] = []
+
+    for doc in docs:
+        parsed_date = parse_daily_title_date(doc.get("title"), default_year=target_date.year)
+        if parsed_date is None or parsed_date == target_date:
+            continue
+        if parsed_date < target_date:
+            earlier.append((parsed_date, doc))
+        else:
+            fallback.append((parsed_date, doc))
+
+    ranked = earlier or fallback
+    candidates = [
+        doc
+        for _parsed_date, doc in sorted(
+            ranked,
+            key=lambda item: (
+                item[0],
+                1 if title_has_template_keyword(item[1].get("title")) else 0,
+                _daily_title_sort_timestamp(item[1]),
+            ),
+            reverse=True,
+        )
+    ]
     return (candidates[0] if candidates else None), candidates
 
 
@@ -835,6 +1229,26 @@ def fetch_document_remote(doc_id: str, user: dict[str, Any], api_host: str = DEF
     if response.get("code") != 0:
         raise RuntimeError(f"document get failed for {doc_id}: {response}")
     return response["data"]
+
+
+def fetch_document_name(doc_id: str, user: dict[str, Any], api_host: str = DEFAULT_API_HOST) -> str | None:
+    response = post_json(
+        f"{api_host}/v3/api/document/get_doc_name",
+        {"docId": doc_id},
+        build_api_headers(user),
+    )
+    if response.get("code") != 0:
+        raise RuntimeError(f"document name get failed for {doc_id}: {response}")
+
+    data = response.get("data")
+    if isinstance(data, str):
+        try:
+            data = json.loads(data)
+        except json.JSONDecodeError:
+            return data or None
+    if isinstance(data, dict) and isinstance(data.get("name"), str):
+        return data.get("name")
+    return None
 
 
 def latest_doc_member_context(events: Iterable[dict[str, Any]], doc_id: str) -> dict[str, Any] | None:
@@ -1006,17 +1420,53 @@ def show_document(
     return None
 
 
+def resolve_backup_doc_reference(
+    doc_ref: str,
+    root: Path | None = None,
+) -> dict[str, Any] | None:
+    root = root or DEFAULT_BACKUP_ROOT
+    doc_dir = root / doc_ref
+    if not doc_dir.is_dir():
+        return None
+
+    files = list(doc_dir.glob("*.json"))
+    if not files:
+        return None
+
+    latest = max(files, key=lambda candidate: candidate.stat().st_mtime)
+    data = load_json(latest)
+    title = infer_title(data) or doc_ref
+    updated_at = int(latest.stat().st_mtime * 1000)
+    return {
+        "doc_id": doc_ref,
+        "title": title,
+        "folder_path": "",
+        "doc_path": doc_ref,
+        "updated_at": updated_at,
+        "updated_at_iso": timestamp_ms_to_iso(updated_at),
+        "source": "backup",
+    }
+
+
 def resolve_document_reference(
     document_metas: Iterable[dict[str, Any]],
     folders: Iterable[dict[str, Any]],
     doc_ref: str,
 ) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
     _, folder_paths = build_folder_indexes(folders)
-    metas = dedupe_document_metas_by_logical_path(document_metas, folder_paths)
+    raw_metas = [enrich_document_meta(meta, folder_paths) for meta in document_metas]
 
-    by_id = [meta for meta in metas if meta.get("doc_id") == doc_ref]
-    if len(by_id) == 1:
-        return by_id[0], []
+    by_id = [meta for meta in raw_metas if meta.get("doc_id") == doc_ref]
+    if by_id:
+        selected = max(by_id, key=document_meta_sort_key)
+        if not selected.get("folder_path"):
+            selected = {
+                **selected,
+                "doc_path": str(selected.get("doc_id") or doc_ref),
+            }
+        return selected, []
+
+    metas = dedupe_document_metas_by_logical_path(raw_metas, folder_paths)
 
     normalized_ref = normalized_lookup_key(doc_ref)
 
@@ -1041,6 +1491,10 @@ def resolve_document_reference(
         return title_matches[0], []
     if len(title_matches) > 1:
         return None, title_matches
+
+    backup_doc = resolve_backup_doc_reference(doc_ref)
+    if backup_doc is not None:
+        return backup_doc, []
 
     return None, []
 
@@ -1187,6 +1641,41 @@ def node_path_to_api_path(path: Iterable[Any]) -> list[Any]:
 
 def generate_node_id(length: int = 10) -> str:
     return "".join(secrets.choice(NODE_ID_ALPHABET) for _ in range(length))
+
+
+def build_copy_doc_request(source_doc_id: str) -> dict[str, Any]:
+    return {
+        "pathname": "/v3/api/list/copy_doc",
+        "method": "POST",
+        "data": {"id": source_doc_id},
+    }
+
+
+def build_rename_doc_request(document_id: str, name: str) -> dict[str, Any]:
+    return {
+        "pathname": "/v3/api/list/rename_doc",
+        "method": "POST",
+        "data": {
+            "documentId": document_id,
+            "name": name,
+        },
+    }
+
+
+def build_batch_delete_request(
+    doc_ids: Iterable[str],
+    folder_ids: Iterable[str] = (),
+    password: str = "",
+) -> dict[str, Any]:
+    return {
+        "pathname": "/v3/api/list/batch_delete",
+        "method": "POST",
+        "data": {
+            "docs": [doc_id for doc_id in doc_ids if isinstance(doc_id, str) and doc_id],
+            "folders": [folder_id for folder_id in folder_ids if isinstance(folder_id, str) and folder_id],
+            "password": password,
+        },
+    }
 
 
 def build_text_update_request(
@@ -1367,6 +1856,88 @@ def perform_text_update(
         path=path,
         new_text=new_text,
         field=field,
+    )
+    if not execute:
+        return {
+            "execute": False,
+            "request": request_payload,
+        }
+
+    response = post_json(
+        f"{api_host}{request_payload['pathname']}",
+        request_payload["data"],
+        build_api_headers(user),
+    )
+    return {
+        "execute": True,
+        "request": request_payload,
+        "response": response,
+    }
+
+
+def perform_copy_document(
+    user: dict[str, Any],
+    source_doc_id: str,
+    execute: bool = False,
+    api_host: str = DEFAULT_API_HOST,
+) -> dict[str, Any]:
+    request_payload = build_copy_doc_request(source_doc_id)
+    if not execute:
+        return {
+            "execute": False,
+            "request": request_payload,
+        }
+
+    response = post_json(
+        f"{api_host}{request_payload['pathname']}",
+        request_payload["data"],
+        build_api_headers(user),
+    )
+    return {
+        "execute": True,
+        "request": request_payload,
+        "response": response,
+    }
+
+
+def perform_rename_document(
+    user: dict[str, Any],
+    document_id: str,
+    name: str,
+    execute: bool = False,
+    api_host: str = DEFAULT_API_HOST,
+) -> dict[str, Any]:
+    request_payload = build_rename_doc_request(document_id, name)
+    if not execute:
+        return {
+            "execute": False,
+            "request": request_payload,
+        }
+
+    response = post_json(
+        f"{api_host}{request_payload['pathname']}",
+        request_payload["data"],
+        build_api_headers(user),
+    )
+    return {
+        "execute": True,
+        "request": request_payload,
+        "response": response,
+    }
+
+
+def perform_batch_delete_documents(
+    user: dict[str, Any],
+    doc_ids: Iterable[str],
+    folder_ids: Iterable[str] = (),
+    password: str = "",
+    execute: bool = False,
+    api_host: str = DEFAULT_API_HOST,
+) -> dict[str, Any]:
+    request_payload = build_batch_delete_request(
+        doc_ids=doc_ids,
+        folder_ids=folder_ids,
+        password=password,
     )
     if not execute:
         return {
@@ -1691,7 +2262,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "search":
         documents = load_latest_backups(args.root)
-        payload = search_documents(documents, args.query, limit=args.limit)
+        metas = load_document_metas(DEFAULT_STORAGE_ROOT, log_root=DEFAULT_LOG_ROOT)
+        title_lookup = {meta["doc_id"]: meta.get("title") for meta in metas if meta.get("doc_id")}
+        payload = search_documents(documents, args.query, limit=args.limit, title_lookup=title_lookup)
         dump_output(payload, args.json)
         return 0
 
